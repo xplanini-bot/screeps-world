@@ -100,7 +100,7 @@ const CARRIER_BODY_Version_5 = [
 ];
 
 const CARRIER_BODY_Version_8 = [
-    CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, 
+    CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY,
     MOVE, MOVE, MOVE, MOVE, MOVE, MOVE, MOVE
 ];
 // Тела для строителей
@@ -2179,7 +2179,7 @@ function runCarrier(creep, spawn, homeRoom) {
             // Проверяем только видимые комнаты
             if (!room) continue;
 
-            
+
             // Сначала проверяем могилы погибших крипов
             const tombstones = room.find(FIND_TOMBSTONES, {
                 filter: tombstone =>
@@ -3480,6 +3480,9 @@ module.exports.loop = function () {
         }
         if (creep.memory.role === "melee") {
             military.runMelee(creep, TOWER_CONTAINER_IDS[0]);
+        }
+        if (creep.memory.role === "ranged") {
+            military.runRanged(creep, TOWER_CONTAINER_IDS[0]);
         }
 
     }
