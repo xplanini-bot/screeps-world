@@ -17,48 +17,65 @@ module.exports = {
 
     manageSpawning: function (spawn) {
 
-        if (spawn.spawning) return;
+    if (spawn.spawning) return;
 
-        for (const roomName of this.targetRooms) {
+    for (const roomName of this.targetRooms) {
 
-            // Проверяем, есть ли резервист для этой комнаты
-            const reserverExists = Object.values(Game.creeps).some(
-                creep =>
-                    creep.memory.role === this.role &&
-                    creep.memory.targetRoom === roomName
-            );
+        // Проверяем, есть ли уже резервист для этой комнаты
+        const reserverExists = Object.values(Game.creeps).some(
+            creep =>
+                creep.memory.role === this.role &&
+                creep.memory.targetRoom === roomName
+        );
 
-            if (reserverExists) continue;
+        // Если резервист жив, нового не создаём
+        if (reserverExists) continue;
 
-            // Создаём резервиста
-            const name = "Reserver_" + roomName + "_" + Game.time;
+        const room = Game.rooms[roomName];
 
-            const result = spawn.spawnCreep(
-                this.body,
-                name,
-                {
-                    memory: {
-                        role: this.role,
-                        targetRoom: roomName
-                    }
+        // Если комната не видна, пока пропускаем её
+        if (!room || !room.controller) continue;
+
+        const controller = room.controller;
+
+        // Проверяем текущий запас резервирования
+        const reservationTicks = controller.reservation
+            ? controller.reservation.ticksToEnd
+            : 0;
+
+        // Если запас 3000 или больше, новый резервист не нужен
+        if (reservationTicks >= 3000) continue;
+
+        // Создаём резервиста
+        const name = "Reserver_" + roomName + "_" + Game.time;
+
+        const result = spawn.spawnCreep(
+            this.body,
+            name,
+            {
+                memory: {
+                    role: this.role,
+                    targetRoom: roomName
                 }
-            );
-
-            if (result === OK) {
-                console.log(
-                    "[РЕЗЕРВИСТ] Создан " + name +
-                    ", цель: " + roomName
-                );
-            } else if (result !== ERR_NOT_ENOUGH_ENERGY) {
-                console.log(
-                    "[РЕЗЕРВИСТ] Ошибка создания: " + result
-                );
             }
+        );
 
-            // За один вызов создаём максимум одного крипа
-            return;
+        if (result === OK) {
+            console.log(
+                "[РЕЗЕРВИСТ] Создан " + name +
+                ", цель: " + roomName +
+                ", запас: " + reservationTicks
+            );
+        } else if (result !== ERR_NOT_ENOUGH_ENERGY) {
+            console.log(
+                "[РЕЗЕРВИСТ] Ошибка создания: " + result
+            );
         }
-    },
+
+        // За один вызов создаём максимум одного крипа
+        return;
+    }
+},
 
     // Управление резервистом
     run: function (creep) {
