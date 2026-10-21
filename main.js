@@ -1,4 +1,5 @@
 const military = require("military");
+const reserver = require("reserver");
 
 const DESIRED_UPGRADERS = 2;
 //const DESIRED_BUILDERS = 1; // строитель теперь зависит от того есть ли строительная площадка
@@ -3404,6 +3405,7 @@ module.exports.loop = function () {
 
     manageSpawning(spawn);
     military.manageSpawning(spawn);
+    reserver.manageSpawning(spawn);
 
     assignHarvestersToMines(homeRoom);
 
@@ -3483,6 +3485,9 @@ module.exports.loop = function () {
         }
         if (creep.memory.role === "ranged") {
             military.runRanged(creep, TOWER_CONTAINER_IDS[0]);
+        }
+        if (creep.memory.role === "reserver") {
+            reserver.run(creep);
         }
 
     }
