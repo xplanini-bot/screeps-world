@@ -4,7 +4,7 @@ const DESIRED_UPGRADERS = 2;
 //const DESIRED_BUILDERS = 1; // строитель теперь зависит от того есть ли строительная площадка
 // Количество необходимых ремонтников
 // const repairerCount = 1; теперь зависит от того есть ли что чинить (хотябы 1 контейнер)
-const DESIRED_CARRIERS = 6; // Перевозчик
+const DESIRED_CARRIERS = 7; // Перевозчик
 const MAX_TOWER_DELIVERY_CARRIERS = 3; // максимальное кол-во задействованных перевозчиков для доставки энергии к башне
 const TOWER_WALL_TARGET_HITS = 200000;
 
