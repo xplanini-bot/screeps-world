@@ -102,17 +102,29 @@ module.exports = {
 
     // Поведение ближнего бойца
     runMelee: function (creep, containerId) {
-        // Проверяем, находится ли боец в боевом режиме
-        if (creep.memory.combatMode) {
-            // Пока боевая задача активна, не возвращаемся к контейнеру
-        } else {
+
+        const hostiles = creep.room.find(FIND_HOSTILE_CREEPS);
+
+        const ramparts = creep.room.find(FIND_MY_STRUCTURES, {
+            filter: structure =>
+                structure.structureType === STRUCTURE_RAMPART
+        });
+
+        // Проверяем, есть ли враги возле наших рампартов
+        const threats = hostiles.filter(hostile =>
+            ramparts.some(rampart =>
+                hostile.pos.getRangeTo(rampart) === 1
+            )
+        );
+
+        // Если атаки нет и боец ещё не в боевом режиме,
+        // направляем его к контейнеру
+        if (threats.length === 0 && !creep.memory.combatMode) {
 
             const container = Game.getObjectById(containerId);
 
-            // Если контейнер пока не найден
             if (!container) return;
 
-            // Идём к контейнеру
             if (!creep.pos.isNearTo(container)) {
                 creep.moveTo(container, {
                     range: 1,
@@ -121,21 +133,25 @@ module.exports = {
                 return;
             }
         }
+
+        // Если атака началась, сразу переходим к выбору
+        // боевой позиции у рампарта
+
         // Боец прибыл и находится в режиме наблюдения
         // Режим наблюдения: ищем врагов возле наших рампартов
-        const hostiles = creep.room.find(FIND_HOSTILE_CREEPS);
+        //const hostiles = creep.room.find(FIND_HOSTILE_CREEPS);
 
-        const ramparts = creep.room.find(FIND_MY_STRUCTURES, {
-            filter: structure =>
-                structure.structureType === STRUCTURE_RAMPART
-        });
+        //const ramparts = creep.room.find(FIND_MY_STRUCTURES, {
+        //    filter: structure =>
+        //        structure.structureType === STRUCTURE_RAMPART
+        //});
 
         // Ищем врагов, находящихся рядом с рампартами
-        const threats = hostiles.filter(hostile =>
-            ramparts.some(rampart =>
-                hostile.pos.getRangeTo(rampart) === 1
-            )
-        );
+        //const threats = hostiles.filter(hostile =>
+        //    ramparts.some(rampart =>
+        //        hostile.pos.getRangeTo(rampart) === 1
+        //    )
+        //);
 
         // Добавляем виртуальных врагов для тестирования
         //if (creep.room.name === creep.room.name) {
