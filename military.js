@@ -3,7 +3,7 @@ module.exports = {
 
     melee: {
         role: "melee",
-        desiredCount: 2,
+        desiredCount: 3,
         body: [
             ATTACK, ATTACK, ATTACK, ATTACK, ATTACK,
             ATTACK, ATTACK, ATTACK, ATTACK, ATTACK,
@@ -13,7 +13,7 @@ module.exports = {
 
     ranged: {
         role: "ranged",
-        desiredCount: 3,
+        desiredCount: 2,
         body: [
             RANGED_ATTACK, RANGED_ATTACK, RANGED_ATTACK,
             RANGED_ATTACK, RANGED_ATTACK, RANGED_ATTACK,
