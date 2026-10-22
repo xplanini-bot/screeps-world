@@ -910,6 +910,16 @@ function runBuilder(creep, spawn, homeRoom) {
     // Пока строитель создаётся, не обрабатываем его задачи
     if (creep.spawning) return;
 
+    console.log(
+        "BUILDER START:",
+        creep.name,
+        "room:", creep.room.name,
+        "pos:", creep.pos.x, creep.pos.y,
+        "energy:", creep.store[RESOURCE_ENERGY],
+        "target:", creep.memory.buildTargetId,
+        "buildPosition:", JSON.stringify(creep.memory.buildPosition)
+    );
+
     const hasCarrier = Object.values(Game.creeps).some(
         c => c.memory.role === "carrier"
     );
