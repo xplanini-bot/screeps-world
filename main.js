@@ -1195,10 +1195,20 @@ function runBuilder(creep, spawn, homeRoom) {
         // Двигаемся к сохранённой позиции
         if (buildPos) {
             const moveResult = creep.moveTo(buildPos, {
+
                 reusePath: 5,
                 maxRooms: 16
             });
-
+            console.log(
+                "BUILDER DEBUG:",
+                creep.name,
+                "room:", creep.room.name,
+                "pos:", creep.pos.x, creep.pos.y,
+                "target:", targetSite.pos.roomName,
+                targetSite.pos.x, targetSite.pos.y,
+                "buildPos:", buildPos.x, buildPos.y,
+                "moveResult:", moveResult
+            );
             // Если маршрут не найден, сбрасываем позицию
             if (
                 moveResult === ERR_NO_PATH ||
