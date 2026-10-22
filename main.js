@@ -2036,6 +2036,174 @@ function runTowerContainerDeliveryMode(creep, homeRoom) {
     return true;
 }
 
+// доставка энергии до контейнера контролера
+function runControllerContainerDeliveryMode(creep, homeRoom) {
+    const capacity = creep.store.getCapacity(RESOURCE_ENERGY);
+
+    let targetId = creep.memory.controllerDeliveryTargetId;
+
+    // Новый заказ выдаём только пустому перевозчику
+    if (!targetId) {
+        if (creep.store[RESOURCE_ENERGY] > 0) return false;
+
+        const controllerContainer =
+            advancedUpgrader.findControllerContainer(homeRoom);
+
+        if (!controllerContainer) return false;
+
+        const containerCapacity =
+            controllerContainer.store.getCapacity(RESOURCE_ENERGY);
+
+        const containerEnergy =
+            controllerContainer.store[RESOURCE_ENERGY] || 0;
+
+        // Контейнер должен содержать меньше половины энергии
+        if (containerEnergy >= containerCapacity / 2) return false;
+
+        // Не выдаём заказ, если контейнер уже закреплён за другим
+        const alreadyAssigned = Object.values(Game.creeps).some(other =>
+            other.name !== creep.name &&
+            other.memory.controllerDeliveryTargetId ===
+            controllerContainer.id
+        );
+
+        if (alreadyAssigned) return false;
+
+        // На полную загрузку должно хватать места в контейнере
+        const freeCapacity =
+            controllerContainer.store.getFreeCapacity(RESOURCE_ENERGY);
+
+        if (freeCapacity < capacity) return false;
+
+        // Домашний Storage — единственный источник энергии
+        const storage = homeRoom.find(FIND_MY_STRUCTURES, {
+            filter: structure =>
+                structure.structureType === STRUCTURE_STORAGE
+        })[0];
+
+        if (!storage) return false;
+
+        const reserved = getReservedEnergy(storage.id, creep.name);
+
+        const availableEnergy =
+            storage.store[RESOURCE_ENERGY] - reserved;
+
+        // Проверяем, хватает ли энергии на полную загрузку
+        if (availableEnergy < capacity) return false;
+
+        // Закрепляем заказ за перевозчиком
+        targetId = controllerContainer.id;
+
+        creep.memory.controllerDeliveryTargetId =
+            controllerContainer.id;
+
+        creep.memory.controllerDeliverySourceId =
+            storage.id;
+
+        creep.memory.controllerDeliveryAmount = capacity;
+
+        reserveEnergy(creep, storage, capacity);
+    }
+
+    const target = Game.getObjectById(
+        creep.memory.controllerDeliveryTargetId
+    );
+
+    const storage = Game.getObjectById(
+        creep.memory.controllerDeliverySourceId
+    );
+
+    const amount = creep.memory.controllerDeliveryAmount;
+
+    // Проверяем, что заказ всё ещё действителен
+    if (
+        !target ||
+        !storage ||
+        !Number.isFinite(amount)
+    ) {
+        releaseEnergyReservation(creep);
+        delete creep.memory.controllerDeliveryTargetId;
+        delete creep.memory.controllerDeliverySourceId;
+        delete creep.memory.controllerDeliveryAmount;
+        return false;
+    }
+
+    // Фаза 1: забираем полную загрузку из Storage
+    if (creep.store[RESOURCE_ENERGY] === 0) {
+        if (storage.store[RESOURCE_ENERGY] < amount) {
+            releaseEnergyReservation(creep);
+            delete creep.memory.controllerDeliveryTargetId;
+            delete creep.memory.controllerDeliverySourceId;
+            delete creep.memory.controllerDeliveryAmount;
+            return false;
+        }
+
+        const result = creep.withdraw(
+            storage,
+            RESOURCE_ENERGY,
+            amount
+        );
+
+        if (result === ERR_NOT_IN_RANGE) {
+            creep.moveTo(storage, { range: 1, reusePath: 20 });
+        } else if (result === OK) {
+            releaseEnergyReservation(creep);
+        } else if (
+            result === ERR_NOT_ENOUGH_RESOURCES ||
+            result === ERR_INVALID_TARGET
+        ) {
+            releaseEnergyReservation(creep);
+            delete creep.memory.controllerDeliveryTargetId;
+            delete creep.memory.controllerDeliverySourceId;
+            delete creep.memory.controllerDeliveryAmount;
+            return false;
+        }
+
+        return true;
+    }
+
+    // Не смешиваем заказ с другой загрузкой
+    if (creep.store[RESOURCE_ENERGY] !== amount) {
+        releaseEnergyReservation(creep);
+        delete creep.memory.controllerDeliveryTargetId;
+        delete creep.memory.controllerDeliverySourceId;
+        delete creep.memory.controllerDeliveryAmount;
+        return false;
+    }
+
+    // Ждём, если контейнер пока не может принять весь груз
+    if (
+        target.store.getFreeCapacity(RESOURCE_ENERGY) < amount
+    ) {
+        return true;
+    }
+
+    // Фаза 2: доставляем полную загрузку
+    const result = creep.transfer(
+        target,
+        RESOURCE_ENERGY,
+        amount
+    );
+
+    if (result === ERR_NOT_IN_RANGE) {
+        creep.moveTo(target, { range: 1, reusePath: 20 });
+    } else if (result === OK) {
+        delete creep.memory.controllerDeliveryTargetId;
+        delete creep.memory.controllerDeliverySourceId;
+        delete creep.memory.controllerDeliveryAmount;
+        creep.memory.returningToBase = true;
+    } else if (result === ERR_INVALID_TARGET) {
+        releaseEnergyReservation(creep);
+        delete creep.memory.controllerDeliveryTargetId;
+        delete creep.memory.controllerDeliverySourceId;
+        delete creep.memory.controllerDeliveryAmount;
+        return false;
+    }
+
+    return true;
+}
+
+
 // Проверить, назначен ли приёмник другому перевозчику
 function isDeliveryTargetAssigned(targetId, creepName) {
     return Object.values(Game.creeps).some(other =>
@@ -2107,6 +2275,12 @@ function runCarrier(creep, spawn, homeRoom) {
     if (runTowerContainerDeliveryMode(creep, homeRoom)) {
         return;
     }
+
+    // Специальный режим доставки энергии в контейнер контроллера
+    if (runControllerContainerDeliveryMode(creep, homeRoom)) {
+        return;
+    }
+
     // РЕЖИМ ДОСТАВКИ
     if (creep.memory.working) {
         releaseReservation();
