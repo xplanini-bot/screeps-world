@@ -1,5 +1,8 @@
 const military = require("military");
 const reserver = require("reserver");
+const advancedUpgrader = require("advancedUpgrader");
+//логика размещения строений
+const construction = require("construction");
 
 const DESIRED_UPGRADERS = 2;
 //const DESIRED_BUILDERS = 1; // строитель теперь зависит от того есть ли строительная площадка
@@ -3406,6 +3409,7 @@ module.exports.loop = function () {
     manageSpawning(spawn);
     military.manageSpawning(spawn);
     reserver.manageSpawning(spawn);
+    advancedUpgrader.manageSpawning(spawn);
 
     assignHarvestersToMines(homeRoom);
 
@@ -3441,6 +3445,8 @@ module.exports.loop = function () {
     //мониторинг контейнеров
     monitorContainerIdleTime(homeRoom);
 
+    construction.manageControllerContainerConstruction(homeRoom);
+    
     const site = homeRoom.find(
         FIND_MY_CONSTRUCTION_SITES
     )[0];
@@ -3488,6 +3494,9 @@ module.exports.loop = function () {
         }
         if (creep.memory.role === "reserver") {
             reserver.run(creep);
+        }
+        if (creep.memory.role === "advancedUpgrader") {
+            advancedUpgrader.run(creep, homeRoom);
         }
 
     }
