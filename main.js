@@ -1048,11 +1048,12 @@ function runBuilder(creep, spawn, homeRoom) {
         return;
     }
 
-    // Строитель занимается только строительством
+    // Строитель подходит вплотную к строительной площадке
     const result = creep.build(targetSite);
 
     if (result === ERR_NOT_IN_RANGE) {
         creep.moveTo(targetSite, {
+            range: 1,
             reusePath: 20
         });
     }
