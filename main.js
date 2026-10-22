@@ -940,6 +940,75 @@ function runBuilder(creep, spawn, homeRoom) {
     // Энергии нет
     if (creep.store[RESOURCE_ENERGY] === 0) {
 
+        // Если строитель на границе комнаты, отходим на одну клетку внутрь
+        if (
+            creep.pos.x === 0 ||
+            creep.pos.x === 49 ||
+            creep.pos.y === 0 ||
+            creep.pos.y === 49
+        ) {
+            const x = creep.pos.x;
+            const y = creep.pos.y;
+
+            const candidates = [];
+
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dy = -1; dy <= 1; dy++) {
+                    if (dx === 0 && dy === 0) continue;
+
+                    const nx = x + dx;
+                    const ny = y + dy;
+
+                    // Только клетки внутри текущей комнаты
+                    if (
+                        nx <= 0 || nx >= 49 ||
+                        ny <= 0 || ny >= 49
+                    ) continue;
+
+                    if (
+                        creep.room.getTerrain().get(nx, ny) ===
+                        TERRAIN_MASK_WALL
+                    ) continue;
+
+                    const structures = creep.room.lookForAt(
+                        LOOK_STRUCTURES, nx, ny
+                    );
+
+                    const blocked = structures.some(s =>
+                        s.structureType !== STRUCTURE_ROAD &&
+                        s.structureType !== STRUCTURE_CONTAINER &&
+                        s.structureType !== STRUCTURE_RAMPART
+                    );
+
+                    if (blocked) continue;
+
+                    const creeps = creep.room.lookForAt(
+                        LOOK_CREEPS, nx, ny
+                    );
+
+                    if (creeps.length > 0) continue;
+
+                    candidates.push(
+                        new RoomPosition(nx, ny, creep.room.name)
+                    );
+                }
+            }
+
+            if (candidates.length > 0) {
+                candidates.sort((a, b) =>
+                    creep.pos.getRangeTo(a) -
+                    creep.pos.getRangeTo(b)
+                );
+
+                creep.moveTo(candidates[0], {
+                    range: 0,
+                    reusePath: 0
+                });
+            }
+
+            return;
+        }
+
         if (hasCarrier) {
             // Проверяем, закреплён ли за строителем живой перевозчик
             const carrierName = creep.memory.energyDeliveryCarrier;
