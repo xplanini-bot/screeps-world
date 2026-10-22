@@ -882,18 +882,26 @@ function runBuilderDeliveryMode(carrier, homeRoom) {
         return false;
     }
 
+
     // Доставляем энергию закреплённому строителю
     const result = carrier.transfer(builder, RESOURCE_ENERGY);
 
     if (result === ERR_NOT_IN_RANGE) {
+        // Двигаемся к строителю, не занимая его клетку
         carrier.moveTo(builder, {
             range: 1,
-            reusePath: 20
+            reusePath: 5,
+            maxRooms: 1
         });
     } else if (result === ERR_INVALID_TARGET) {
         clearBuilderEnergyAssignment(carrier);
         return false;
+    } else if (result === ERR_FULL) {
+        // У строителя нет места для дополнительной энергии
+        clearBuilderEnergyAssignment(carrier);
+        return false;
     }
+
 
     // Если передача опустошила перевозчика, начинаем возвращение
     if (carrier.store[RESOURCE_ENERGY] === 0) {
