@@ -2417,16 +2417,7 @@ function runCarrier(creep, spawn, homeRoom) {
         }
     ).length > 0;
 
-    // Проверяем, нуждается ли контейнер возле контроллера в энергии
-    const controllerContainer =
-        advancedUpgrader.findControllerContainer(homeRoom);
-
-    const controllerNeedsEnergy =
-        controllerContainer &&
-        controllerContainer.store[RESOURCE_ENERGY] <
-            controllerContainer.store.getCapacity(RESOURCE_ENERGY) / 2;
-
-    // Storage используем как резерв, если есть потребность в энергии
+    // Storage используем как резерв, только если базе нужна энергия
     const builderWaiting =
         Array.isArray(Memory.builderEnergyQueue) &&
         Memory.builderEnergyQueue.length > 0;
@@ -2434,9 +2425,7 @@ function runCarrier(creep, spawn, homeRoom) {
     const allowStorage =
         spawnNeedsEnergy ||
         extensionsNeedEnergy ||
-        builderWaiting ||
-        controllerNeedsEnergy;
-
+        builderWaiting;
     container = findEnergyContainer(
         creep,
         roomNames,
