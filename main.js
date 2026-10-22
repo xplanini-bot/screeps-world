@@ -1081,77 +1081,137 @@ function runBuilder(creep, spawn, homeRoom) {
     }
 
 
+
     // Строитель занимается только строительством
     const result = creep.build(targetSite);
 
     if (result === ERR_NOT_IN_RANGE) {
-        // Ищем свободные клетки вокруг строительной площадки
-        const terrain = targetSite.room.getTerrain();
-        const positions = [];
+        let buildPos = null;
 
-        for (let dx = -1; dx <= 1; dx++) {
-            for (let dy = -1; dy <= 1; dy++) {
-                if (dx === 0 && dy === 0) continue;
+        // Проверяем ранее выбранную позицию
+        const savedPos = creep.memory.buildPosition;
 
-                const x = targetSite.pos.x + dx;
-                const y = targetSite.pos.y + dy;
+        if (savedPos) {
+            const x = savedPos.x;
+            const y = savedPos.y;
 
-                // Не выходим за границы комнаты
-                if (x < 1 || x > 48 || y < 1 || y > 48) {
-                    continue;
-                }
+            const structures = targetSite.room.lookForAt(
+                LOOK_STRUCTURES, x, y
+            );
 
-                // Пропускаем стены
-                if (terrain.get(x, y) === TERRAIN_MASK_WALL) {
-                    continue;
-                }
+            const blockedByStructure = structures.some(
+                structure =>
+                    structure.structureType !== STRUCTURE_ROAD &&
+                    structure.structureType !== STRUCTURE_CONTAINER &&
+                    structure.structureType !== STRUCTURE_RAMPART
+            );
 
-                const structures = targetSite.room.lookForAt(
-                    LOOK_STRUCTURES, x, y
+            const creeps = targetSite.room.lookForAt(
+                LOOK_CREEPS, x, y
+            );
+
+            if (
+                !blockedByStructure &&
+                creeps.every(otherCreep => otherCreep.name === creep.name) &&
+                targetSite.room.getTerrain().get(x, y) !== TERRAIN_MASK_WALL
+            ) {
+                buildPos = new RoomPosition(
+                    x, y, targetSite.room.name
                 );
-
-                // Пропускаем непроходимые постройки
-                const blockedByStructure = structures.some(
-                    structure =>
-                        structure.structureType !== STRUCTURE_ROAD &&
-                        structure.structureType !== STRUCTURE_CONTAINER &&
-                        structure.structureType !== STRUCTURE_RAMPART
-                );
-
-                if (blockedByStructure) continue;
-
-                // Пропускаем строительные площадки на этой клетке
-                const sites = targetSite.room.lookForAt(
-                    LOOK_CONSTRUCTION_SITES, x, y
-                );
-
-                if (sites.length > 0) continue;
-
-                // Пропускаем клетки, занятые другими юнитами
-                const creeps = targetSite.room.lookForAt(
-                    LOOK_CREEPS, x, y
-                );
-
-                if (creeps.length > 0) continue;
-
-                // Сохраняем подходящую позицию
-                positions.push(
-                    new RoomPosition(x, y, targetSite.room.name)
-                );
+            } else {
+                delete creep.memory.buildPosition;
             }
         }
 
-        if (positions.length > 0) {
-            // Выбираем ближайшую свободную клетку
-            positions.sort((a, b) =>
-                creep.pos.getRangeTo(a) - creep.pos.getRangeTo(b)
-            );
+        // Если сохранённой позиции нет, ищем новую
+        if (!buildPos) {
+            const terrain = targetSite.room.getTerrain();
+            const positions = [];
 
-            creep.moveTo(positions[0], {
-                reusePath: 20
-            });
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dy = -1; dy <= 1; dy++) {
+                    if (dx === 0 && dy === 0) continue;
+
+                    const x = targetSite.pos.x + dx;
+                    const y = targetSite.pos.y + dy;
+
+                    // Допускаем пограничные клетки комнаты
+                    if (x < 0 || x > 49 || y < 0 || y > 49) {
+                        continue;
+                    }
+
+                    if (
+                        terrain.get(x, y) === TERRAIN_MASK_WALL
+                    ) {
+                        continue;
+                    }
+
+                    const structures = targetSite.room.lookForAt(
+                        LOOK_STRUCTURES, x, y
+                    );
+
+                    const blockedByStructure = structures.some(
+                        structure =>
+                            structure.structureType !== STRUCTURE_ROAD &&
+                            structure.structureType !== STRUCTURE_CONTAINER &&
+                            structure.structureType !== STRUCTURE_RAMPART
+                    );
+
+                    if (blockedByStructure) continue;
+
+                    const sites = targetSite.room.lookForAt(
+                        LOOK_CONSTRUCTION_SITES, x, y
+                    );
+
+                    if (sites.length > 0) continue;
+
+                    const creeps = targetSite.room.lookForAt(
+                        LOOK_CREEPS, x, y
+                    );
+
+                    if (creeps.length > 0) continue;
+
+                    positions.push(
+                        new RoomPosition(x, y, targetSite.room.name)
+                    );
+                }
+            }
+
+            if (positions.length > 0) {
+                positions.sort((a, b) =>
+                    creep.pos.getRangeTo(a) -
+                    creep.pos.getRangeTo(b)
+                );
+
+                buildPos = positions[0];
+
+                creep.memory.buildPosition = {
+                    x: buildPos.x,
+                    y: buildPos.y
+                };
+            }
         }
+
+        // Двигаемся к сохранённой позиции
+        if (buildPos) {
+            const moveResult = creep.moveTo(buildPos, {
+                reusePath: 5,
+                maxRooms: 16
+            });
+
+            // Если маршрут не найден, сбрасываем позицию
+            if (
+                moveResult === ERR_NO_PATH ||
+                moveResult === ERR_INVALID_TARGET
+            ) {
+                delete creep.memory.buildPosition;
+            }
+        }
+    } else if (result === OK) {
+        // Строитель уже работает на площадке
+        delete creep.memory.buildPosition;
     }
+
 
 }
 
