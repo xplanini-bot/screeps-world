@@ -1048,15 +1048,79 @@ function runBuilder(creep, spawn, homeRoom) {
         return;
     }
 
-    // Строитель подходит вплотную к строительной площадке
+    
+    // Строитель занимается только строительством
     const result = creep.build(targetSite);
 
     if (result === ERR_NOT_IN_RANGE) {
-        creep.moveTo(targetSite, {
-            range: 1,
-            reusePath: 20
-        });
+        // Ищем свободные клетки вокруг строительной площадки
+        const terrain = targetSite.room.getTerrain();
+        const positions = [];
+
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+                if (dx === 0 && dy === 0) continue;
+
+                const x = targetSite.pos.x + dx;
+                const y = targetSite.pos.y + dy;
+
+                // Не выходим за границы комнаты
+                if (x < 1 || x > 48 || y < 1 || y > 48) {
+                    continue;
+                }
+
+                // Пропускаем стены
+                if (terrain.get(x, y) === TERRAIN_MASK_WALL) {
+                    continue;
+                }
+
+                const structures = targetSite.room.lookForAt(
+                    LOOK_STRUCTURES, x, y
+                );
+
+                // Пропускаем непроходимые постройки
+                const blockedByStructure = structures.some(
+                    structure =>
+                        structure.structureType !== STRUCTURE_ROAD &&
+                        structure.structureType !== STRUCTURE_CONTAINER &&
+                        structure.structureType !== STRUCTURE_RAMPART
+                );
+
+                if (blockedByStructure) continue;
+
+                // Пропускаем строительные площадки на этой клетке
+                const sites = targetSite.room.lookForAt(
+                    LOOK_CONSTRUCTION_SITES, x, y
+                );
+
+                if (sites.length > 0) continue;
+
+                // Пропускаем клетки, занятые другими юнитами
+                const creeps = targetSite.room.lookForAt(
+                    LOOK_CREEPS, x, y
+                );
+
+                if (creeps.length > 0) continue;
+
+                // Сохраняем подходящую позицию
+                positions.push(
+                    new RoomPosition(x, y, targetSite.room.name)
+                );
+            }
+        }
+
+        if (positions.length > 0) {
+            // Выбираем ближайшую свободную клетку
+            positions.sort((a, b) =>
+                creep.pos.getRangeTo(a) - creep.pos.getRangeTo(b)
+            );
+
+            creep.moveTo(positions[0], {
+                reusePath: 20
+            });
+        }
     }
+
 }
 
 // Шахтёр поиск назначенного источника
