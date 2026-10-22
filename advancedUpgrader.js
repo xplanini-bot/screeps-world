@@ -22,115 +22,101 @@ const advancedUpgrader = {
         })[0] || null;
     },
 
-    
-manageSpawning(spawn) {
-    if (spawn.spawning) {
-        return;
-    }
+    // Создание нового апгрейдера
+    manageSpawning(spawn) {
+        if (spawn.spawning) return;
 
-    const room = spawn.room;
+        const room = spawn.room;
 
-    if (!room.storage) {
-        console.log("[AdvancedUpgrader] Нет построенного Storage");
-        return;
-    }
+        // Storage должен быть построен
+        if (!room.storage) return;
 
-    const extensions = room.find(FIND_MY_STRUCTURES, {
-        filter: structure =>
-            structure.structureType === STRUCTURE_EXTENSION
-    });
+        // Должно быть построено не менее 17 расширителей
+        const extensions = room.find(FIND_MY_STRUCTURES, {
+            filter: structure =>
+                structure.structureType === STRUCTURE_EXTENSION
+        });
 
-    if (extensions.length < 17) {
-        console.log(
-            `[AdvancedUpgrader] Расширителей: ${extensions.length}/17`
-        );
-        return;
-    }
+        if (extensions.length < 17) return;
 
-    const container = this.findControllerContainer(room);
-
-    if (!container) {
-        console.log(
-            "[AdvancedUpgrader] Не найден контейнер возле контроллера"
-        );
-        return;
-    }
-
-    const creeps = Object.values(Game.creeps).filter(
-        creep => creep.memory.role === this.role
-    );
-
-    if (creeps.length >= this.desiredCount) {
-        console.log(
-            `[AdvancedUpgrader] Уже существует юнитов: ${creeps.length}`
-        );
-        return;
-    }
-
-    const cost = this.body.reduce(
-        (total, part) => total + BODYPART_COST[part],
-        0
-    );
-
-    if (room.energyAvailable < cost) {
-        console.log(
-            `[AdvancedUpgrader] Энергии ${room.energyAvailable}/${cost}`
-        );
-        return;
-    }
-
-    const name = `AdvancedUpgrader-${Game.time}`;
-
-    const result = spawn.spawnCreep(this.body, name, {
-        memory: {
-            role: this.role,
-            working: false
-        }
-    });
-
-    if (result === OK) {
-        console.log("[AdvancedUpgrader] Начато создание юнита");
-    } else {
-        console.log(
-            `[AdvancedUpgrader] Ошибка создания: ${result}`
-        );
-    }
-},
-
-
-    // Работа апгрейдера
-    run(creep, room) {
-        const controller = room.controller;
-        if (!controller) return;
-
-        const energy = creep.store[RESOURCE_ENERGY];
-
-        // Если энергия есть — улучшаем контроллер
-        if (energy > 0) {
-            const result = creep.upgradeController(controller);
-
-            if (result === ERR_NOT_IN_RANGE) {
-                creep.moveTo(controller, { reusePath: 20 });
-            }
-
-            return;
-        }
-
-        // Если энергии нет — ищем контейнер возле контроллера
+        // Рядом с контроллером должен быть контейнер
         const container = this.findControllerContainer(room);
         if (!container) return;
 
-        if (container.store[RESOURCE_ENERGY] === 0) return;
+        const creeps = Object.values(Game.creeps).filter(
+            creep => creep.memory.role === this.role
+        );
 
-        const result = creep.withdraw(container, RESOURCE_ENERGY);
+        if (creeps.length >= this.desiredCount) return;
 
-        if (result === ERR_NOT_IN_RANGE) {
+        const cost = this.body.reduce(
+            (total, part) => total + BODYPART_COST[part],
+            0
+        );
+
+        if (spawn.room.energyAvailable < cost) return;
+
+        const name = `AdvancedUpgrader-${Game.time}`;
+
+        spawn.spawnCreep(this.body, name, {
+            memory: {
+                role: this.role,
+                working: false
+            }
+        });
+    },
+
+    // Работа апгрейдера
+    
+run(creep, room) {
+    const controller = room.controller;
+    if (!controller) return;
+
+    const container = this.findControllerContainer(room);
+    if (!container) return;
+
+    // Сначала апгрейдер должен добраться до контейнера
+    if (!creep.memory.containerPostReached) {
+        if (creep.pos.getRangeTo(container) > 1) {
             creep.moveTo(container, {
                 range: 1,
                 reusePath: 20
             });
+            return;
         }
+
+        // Апгрейдер уже стоит рядом с контейнером
+        creep.memory.containerPostReached = true;
     }
+
+    const energy = creep.store[RESOURCE_ENERGY];
+
+    // Если энергия есть — улучшаем контроллер
+    if (energy > 0) {
+        const result = creep.upgradeController(controller);
+
+        if (result === ERR_NOT_IN_RANGE) {
+            creep.moveTo(controller, {
+                reusePath: 20
+            });
+        }
+
+        return;
+    }
+
+    // Если энергии нет — ждём её в контейнере
+    if (container.store[RESOURCE_ENERGY] === 0) return;
+
+    const result = creep.withdraw(container, RESOURCE_ENERGY);
+
+    if (result === ERR_NOT_IN_RANGE) {
+        creep.moveTo(container, {
+            range: 1,
+            reusePath: 20
+        });
+    }
+}
+
 };
 
 module.exports = advancedUpgrader;
