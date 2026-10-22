@@ -1021,34 +1021,66 @@ function runBuilder(creep, spawn, homeRoom) {
         return;
     }
 
-    // Ищем строительные площадки:
-    // сначала в домашней комнате, затем в удалённых
-    const roomNames = [
-        homeRoom.name,
-        ...REMOTE_ROOMS
-    ];
 
-    let targetSite = null;
+    // Проверяем ранее выбранную строительную площадку
+    let targetSite = creep.memory.buildTargetId
+        ? Game.getObjectById(creep.memory.buildTargetId)
+        : null;
 
-    for (const roomName of [...new Set(roomNames)]) {
-        const room = Game.rooms[roomName];
+    // Если площадка исчезла или строительство завершено,
+    // выбираем новую
+    if (
+        !targetSite ||
+        targetSite.progress >= targetSite.progressTotal
+    ) {
+        delete creep.memory.buildTargetId;
+        targetSite = null;
 
-        if (!room) continue;
+        // Сначала домашняя комната, затем удалённые
+        const roomNames = [
+            homeRoom.name,
+            ...REMOTE_ROOMS
+        ];
 
-        const sites = room.find(FIND_MY_CONSTRUCTION_SITES);
 
-        if (sites.length > 0) {
-            targetSite = sites[0];
-            break;
+        for (const roomName of [...new Set(roomNames)]) {
+            const room = Game.rooms[roomName];
+
+            if (!room) continue;
+
+            const sites = room.find(FIND_MY_CONSTRUCTION_SITES);
+
+            for (const site of sites) {
+                // Проверяем, не закреплена ли площадка
+                // за другим строителем
+                const assignedToOtherBuilder =
+                    Object.values(Game.creeps).some(
+                        otherCreep =>
+                            otherCreep.name !== creep.name &&
+                            otherCreep.memory.role === "builder" &&
+                            otherCreep.memory.buildTargetId === site.id
+                    );
+
+                if (assignedToOtherBuilder) continue;
+
+                // Назначаем свободную площадку
+                targetSite = site;
+                creep.memory.buildTargetId = site.id;
+                break;
+            }
+
+            if (targetSite) break;
         }
+
     }
 
+    // Подходящих площадок нет
     if (!targetSite) {
         removeBuilderEnergyRequest(creep.name);
         return;
     }
 
-    
+
     // Строитель занимается только строительством
     const result = creep.build(targetSite);
 
