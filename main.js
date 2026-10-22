@@ -1129,6 +1129,8 @@ function runBuilder(creep, spawn, homeRoom) {
             );
 
             if (
+                x > 0 && x < 49 &&
+                y > 0 && y < 49 &&
                 !blockedByStructure &&
                 creeps.every(otherCreep => otherCreep.name === creep.name) &&
                 targetSite.room.getTerrain().get(x, y) !== TERRAIN_MASK_WALL
@@ -1153,8 +1155,8 @@ function runBuilder(creep, spawn, homeRoom) {
                     const x = targetSite.pos.x + dx;
                     const y = targetSite.pos.y + dy;
 
-                    // Допускаем пограничные клетки комнаты
-                    if (x < 0 || x > 49 || y < 0 || y > 49) {
+                    // Не выбираем клетки на границе комнаты
+                    if (x <= 0 || x >= 49 || y <= 0 || y >= 49) {
                         continue;
                     }
 
