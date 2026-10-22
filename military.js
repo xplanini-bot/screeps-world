@@ -21,6 +21,22 @@ module.exports = {
         ]
     },
 
+    // Клетки, запрещённые для движения ближнего бойца
+    meleeForbiddenPositions: [
+        { x: 17, y: 1 },
+        { x: 18, y: 1 },
+        { x: 19, y: 1 },
+        { x: 20, y: 1 },
+        { x: 21, y: 1 },
+        { x: 22, y: 1 },
+        { x: 23, y: 1 },
+        { x: 24, y: 1 },
+        { x: 25, y: 1 },
+        { x: 26, y: 1 },
+        { x: 27, y: 1 },
+        { x: 28, y: 1 }
+    ],
+
     // Тестовые враги для проверки обороны
     // testEnemies: [
     //    { x: 6, y: 1 },
@@ -99,6 +115,29 @@ module.exports = {
             }
         }
     },
+
+    // Движение ближнего бойца с учётом запрещённых клеток
+moveMeleeTo: function (creep, target) {
+
+    const forbidden = this.meleeForbiddenPositions;
+
+    creep.moveTo(target, {
+        reusePath: 0,
+
+        costCallback: function (roomName, costMatrix) {
+
+            if (roomName !== creep.room.name) {
+                return costMatrix;
+            }
+
+            for (const pos of forbidden) {
+                costMatrix.set(pos.x, pos.y, 255);
+            }
+
+            return costMatrix;
+        }
+    });
+},
 
     // Поведение ближнего бойца
     runMelee: function (creep, containerId) {
@@ -246,9 +285,7 @@ module.exports = {
 
         // Двигаемся на выбранный рампарт
         if (!creep.pos.isEqualTo(targetRampart.pos)) {
-            creep.moveTo(targetRampart, {
-                reusePath: 10
-            });
+            this.moveMeleeTo(creep, targetRampart);
             return;
         }
 
