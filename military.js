@@ -13,7 +13,7 @@ module.exports = {
 
     ranged: {
         role: "ranged",
-        desiredCount: 1,
+        desiredCount: 3,
         body: [
             RANGED_ATTACK, RANGED_ATTACK, RANGED_ATTACK,
             RANGED_ATTACK, RANGED_ATTACK, RANGED_ATTACK,
