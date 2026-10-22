@@ -22,49 +22,81 @@ const advancedUpgrader = {
         })[0] || null;
     },
 
-    // Создание нового апгрейдера
-    manageSpawning(spawn) {
-        if (spawn.spawning) return;
+    
+manageSpawning(spawn) {
+    if (spawn.spawning) {
+        return;
+    }
 
-        const room = spawn.room;
+    const room = spawn.room;
 
-        // Storage должен быть построен
-        if (!room.storage) return;
+    if (!room.storage) {
+        console.log("[AdvancedUpgrader] Нет построенного Storage");
+        return;
+    }
 
-        // Должно быть построено не менее 17 расширителей
-        const extensions = room.find(FIND_MY_STRUCTURES, {
-            filter: structure =>
-                structure.structureType === STRUCTURE_EXTENSION
-        });
+    const extensions = room.find(FIND_MY_STRUCTURES, {
+        filter: structure =>
+            structure.structureType === STRUCTURE_EXTENSION
+    });
 
-        if (extensions.length < 17) return;
-
-        // Рядом с контроллером должен быть контейнер
-        const container = this.findControllerContainer(room);
-        if (!container) return;
-
-        const creeps = Object.values(Game.creeps).filter(
-            creep => creep.memory.role === this.role
+    if (extensions.length < 17) {
+        console.log(
+            `[AdvancedUpgrader] Расширителей: ${extensions.length}/17`
         );
+        return;
+    }
 
-        if (creeps.length >= this.desiredCount) return;
+    const container = this.findControllerContainer(room);
 
-        const cost = this.body.reduce(
-            (total, part) => total + BODYPART_COST[part],
-            0
+    if (!container) {
+        console.log(
+            "[AdvancedUpgrader] Не найден контейнер возле контроллера"
         );
+        return;
+    }
 
-        if (spawn.room.energyAvailable < cost) return;
+    const creeps = Object.values(Game.creeps).filter(
+        creep => creep.memory.role === this.role
+    );
 
-        const name = `AdvancedUpgrader-${Game.time}`;
+    if (creeps.length >= this.desiredCount) {
+        console.log(
+            `[AdvancedUpgrader] Уже существует юнитов: ${creeps.length}`
+        );
+        return;
+    }
 
-        spawn.spawnCreep(this.body, name, {
-            memory: {
-                role: this.role,
-                working: false
-            }
-        });
-    },
+    const cost = this.body.reduce(
+        (total, part) => total + BODYPART_COST[part],
+        0
+    );
+
+    if (room.energyAvailable < cost) {
+        console.log(
+            `[AdvancedUpgrader] Энергии ${room.energyAvailable}/${cost}`
+        );
+        return;
+    }
+
+    const name = `AdvancedUpgrader-${Game.time}`;
+
+    const result = spawn.spawnCreep(this.body, name, {
+        memory: {
+            role: this.role,
+            working: false
+        }
+    });
+
+    if (result === OK) {
+        console.log("[AdvancedUpgrader] Начато создание юнита");
+    } else {
+        console.log(
+            `[AdvancedUpgrader] Ошибка создания: ${result}`
+        );
+    }
+},
+
 
     // Работа апгрейдера
     run(creep, room) {
