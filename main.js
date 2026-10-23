@@ -8,19 +8,18 @@ const DESIRED_UPGRADERS = 2;
 //const DESIRED_BUILDERS = 1; // строитель теперь зависит от того есть ли строительная площадка
 // Количество необходимых ремонтников
 // const repairerCount = 1; теперь зависит от того есть ли что чинить (хотябы 1 контейнер)
-const DESIRED_CARRIERS = 10; // Перевозчик
-const MAX_TOWER_DELIVERY_CARRIERS = 3; // максимальное кол-во задействованных перевозчиков для доставки энергии к башне
-const TOWER_WALL_TARGET_HITS = 600000;
+const DESIRED_CARRIERS = 2; // Перевозчик
+const MAX_TOWER_DELIVERY_CARRIERS = 0; // максимальное кол-во задействованных перевозчиков для доставки энергии к башне
+const TOWER_WALL_TARGET_HITS = 100000;
 
 // Доля средней прочности, при которой укрепление считается критическим
 const TOWER_CRITICAL_RATIO = 0.8;
 
 // Башня и закреплённые за ней контейнеры
-const TOWER_ID = "6ad6112a6bec47cae3a25ec4";
-const TOWER_CONTAINER_IDS = ["6ad6496b23c84e2af097a96c"];
+const TOWER_ID = null;
+const TOWER_CONTAINER_IDS = [];
 // Комнаты, разрешённые для освоения
 const REMOTE_ROOMS = [
-    "W23S32"
 ];
 const REMOTE_ROOM = REMOTE_ROOMS[0]; // Временно для старых функций
 
