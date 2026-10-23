@@ -20,6 +20,12 @@ module.exports = {
             MOVE, MOVE, MOVE, MOVE
         ]
     },
+    // мини атакующий
+    emergencyAttacker: {
+        role: "emergencyAttacker",
+        desiredCount: 1,
+        body: [ATTACK, MOVE]
+    },
 
     // Клетки, запрещённые для движения ближнего бойца
     meleeForbiddenPositions: [
@@ -53,6 +59,39 @@ module.exports = {
 
     // Создание бойцов
     manageSpawning: function (spawn) {
+
+        // Экстренный атакующий создаётся только при наличии врагов
+        const hostiles = spawn.room.find(FIND_HOSTILE_CREEPS);
+
+        if (hostiles.length > 0) {
+            const attackers = Object.values(Game.creeps).filter(
+                creep => creep.memory.role === this.emergencyAttacker.role
+            );
+
+            if (attackers.length < this.emergencyAttacker.desiredCount &&
+                !spawn.spawning) {
+
+                const name = "EmergencyAttacker_" + Game.time;
+
+                const result = spawn.spawnCreep(
+                    this.emergencyAttacker.body,
+                    name,
+                    {
+                        memory: {
+                            role: this.emergencyAttacker.role
+                        }
+                    }
+                );
+
+                if (result === OK) {
+                    console.log(
+                        "[ВОЕННЫЙ МОДУЛЬ] Создан экстренный атакующий: " + name
+                    );
+                }
+
+                return;
+            }
+        }
 
         // Проверяем наличие башни в домашней комнате
         const towers = spawn.room.find(FIND_MY_STRUCTURES, {
@@ -124,27 +163,27 @@ module.exports = {
     },
 
     // Движение ближнего бойца с учётом запрещённых клеток
-moveMeleeTo: function (creep, target) {
+    moveMeleeTo: function (creep, target) {
 
-    const forbidden = this.meleeForbiddenPositions;
+        const forbidden = this.meleeForbiddenPositions;
 
-    creep.moveTo(target, {
-        reusePath: 0,
+        creep.moveTo(target, {
+            reusePath: 0,
 
-        costCallback: function (roomName, costMatrix) {
+            costCallback: function (roomName, costMatrix) {
 
-            if (roomName !== creep.room.name) {
+                if (roomName !== creep.room.name) {
+                    return costMatrix;
+                }
+
+                for (const pos of forbidden) {
+                    costMatrix.set(pos.x, pos.y, 255);
+                }
+
                 return costMatrix;
             }
-
-            for (const pos of forbidden) {
-                costMatrix.set(pos.x, pos.y, 255);
-            }
-
-            return costMatrix;
-        }
-    });
-},
+        });
+    },
 
     // Поведение ближнего бойца
     runMelee: function (creep, containerId) {
@@ -516,6 +555,25 @@ moveMeleeTo: function (creep, target) {
 
             creep.rangedAttack(currentTarget);
         }
-    }
+    },
 
+    // Экстренный атакующий
+runEmergencyAttacker: function (creep) {
+        const hostiles = creep.room.find(FIND_HOSTILE_CREEPS);
+
+        // Если врагов больше нет — ждём
+        if (hostiles.length === 0) return;
+
+        // Ищем ближайшего врага
+        const target = creep.pos.findClosestByPath(hostiles);
+
+        if (!target) return;
+
+        // Если враг рядом — атакуем
+        if (creep.attack(target) === ERR_NOT_IN_RANGE) {
+            creep.moveTo(target, {
+                visualizePathStyle: { stroke: "#ff0000" }
+            });
+        }
+    }
 };
