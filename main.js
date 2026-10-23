@@ -315,10 +315,15 @@ function manageSpawning(spawn) {
         mine => mine.desiredMiners > 0 && mine.level >= 2
     );
 
+    const controllerContainerExists =
+        !!advancedUpgrader.findControllerContainer(spawn.room);
+
+    const desiredUpgraders =
+        controllerContainerExists && extensions.length > 17
+            ? 0
+            : DESIRED_UPGRADERS;
 
     // Приоритет создания
-
-
     const roles = [
         {
             role: "carrier",
@@ -334,7 +339,8 @@ function manageSpawning(spawn) {
         },
         {
             role: "upgrader",
-            desired: DESIRED_UPGRADERS,
+            //desired: DESIRED_UPGRADERS,
+            desired: desiredUpgraders,
             prefix: "Upgrader",
             body: upgraderBody
         },
