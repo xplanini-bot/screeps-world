@@ -321,9 +321,10 @@ const builderCount =
         !!advancedUpgrader.findControllerContainer(spawn.room);
 
     const desiredUpgraders =
-        controllerContainerExists && extensions.length > 17
-            ? 0
-            : DESIRED_UPGRADERS;
+    !hasContainers ||
+    (controllerContainerExists && extensions.length > 17)
+        ? 0
+        : DESIRED_UPGRADERS;
 
     // Приоритет создания
     const roles = [
