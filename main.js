@@ -253,8 +253,11 @@ function manageSpawning(spawn) {
             return room.find(FIND_MY_CONSTRUCTION_SITES).length > 0;
         });
 
-    // Строитель нужен только при наличии площадок
-    const builderCount = hasConstructionSitesForBuilder ? 1 : 0;
+    // Строитель нужен только при наличии площадок и только если есть контейнер
+    
+const builderCount =
+    hasContainers && hasConstructionSitesForBuilder ? 1 : 0;
+
 
 
     // Выбираем поколение строителя по количеству Extensions
