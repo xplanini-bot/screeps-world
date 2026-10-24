@@ -2911,7 +2911,7 @@ function monitorContainerIdleTime(homeRoom) {
                 : Game.time - idleSince;
 
             // Удаляем контейнер после 1000 тиков без пополнения
-            if (idleTicks >= 1000 && mineContainers.length > 1) {
+            if (idleTicks >= 5000 && mineContainers.length > 1) {
                 const result = container.destroy();
 
                 if (result === OK) {
