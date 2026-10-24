@@ -331,10 +331,12 @@ function manageSpawning(spawn) {
         !!advancedUpgrader.findControllerContainer(spawn.room);
 
     // условия создания апгрейдеров и их кол-во
-    const desiredUpgraders =
-        !hasContainers ||
-            (controllerContainerExists && extensions.length > 17)
-            ? 0
+   const desiredUpgraders =
+    !hasContainers ||
+        (controllerContainerExists && extensions.length > 17)
+        ? 0
+        : extensions.length >= 5
+            ? 2
             : 1;
 
     // Приоритет создания
