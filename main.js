@@ -331,13 +331,13 @@ function manageSpawning(spawn) {
         !!advancedUpgrader.findControllerContainer(spawn.room);
 
     // условия создания апгрейдеров и их кол-во
-   const desiredUpgraders =
-    !hasContainers ||
-        (controllerContainerExists && extensions.length > 17)
-        ? 0
-        : extensions.length >= 5
-            ? 2
-            : 1;
+    const desiredUpgraders =
+        !hasContainers ||
+            (controllerContainerExists && extensions.length > 17)
+            ? 0
+            : extensions.length >= 5
+                ? 2
+                : 1;
 
     // Приоритет создания
     const roles = [
@@ -743,7 +743,10 @@ function runUpgrader(creep, homeRoom, containers) {
     const result = creep.upgradeController(controller);
 
     if (result === ERR_NOT_IN_RANGE) {
-        creep.moveTo(controller);
+        creep.moveTo(controller, {
+            range: 1,
+            reusePath: 10
+        });
     }
 }
 
