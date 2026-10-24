@@ -740,14 +740,18 @@ function runUpgrader(creep, homeRoom, containers) {
 
     if (!controller) return;
 
-    const result = creep.upgradeController(controller);
+    // Сначала подходим вплотную к контроллеру
+if (creep.pos.getRangeTo(controller) > 1) {
+    creep.moveTo(controller, {
+        range: 1,
+        reusePath: 5
+    });
 
-    if (result === ERR_NOT_IN_RANGE) {
-        creep.moveTo(controller, {
-            range: 1,
-            reusePath: 10
-        });
-    }
+    return;
+}
+
+// Только находясь на соседней клетке, улучшаем контроллер
+creep.upgradeController(controller);
 }
 
 
