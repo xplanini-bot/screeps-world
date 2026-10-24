@@ -400,11 +400,26 @@ function manageSpawning(spawn) {
         }
 
         const cost = minerBody.reduce(
-            (total, part) => total + BODYPART_COST[part],
-            0
-        );
+    (total, part) => total + BODYPART_COST[part],
+    0
+);
 
-        if (spawn.room.energyAvailable < cost) break;
+console.log(
+    "[ШАХТЁР] Проверка создания:",
+    "комната:", mine.roomName,
+    "уровень:", mine.level,
+    "энергия:", spawn.room.energyAvailable,
+    "стоимость тела:", cost,
+    "не хватает:", Math.max(0, cost - spawn.room.energyAvailable),
+    "частей тела:", minerBody.length,
+    "шахтёров на шахте:", minersOnMine.length,
+    "требуется:", mine.desiredMiners
+);
+
+if (spawn.room.energyAvailable < cost) {
+    console.log("[ШАХТЁР] Недостаточно энергии для создания");
+    break;
+}
 
         const name = "Miner_" + Game.time;
 
@@ -3489,14 +3504,7 @@ function analyzeMines(room) {
 // Расчёт потребности шахт в юнитах
 function calculateMineNeeds(room) {
     const mines = analyzeMines(room);
-    console.log(
-        `[ШАХТЫ] Комната ${room.name}: ` +
-        mines.map(mine =>
-            `Источник ${mine.id} — уровень ${mine.level}, ` +
-            `контейнер: ${mine.containerId ? "есть" : "нет"}`
-        ).join(" | ")
-    );
-    
+
     return mines.map(mine => {
         // Проверяем наличие мощного шахтёра на этой шахте
         const hasPowerfulMiner = Object.values(Game.creeps).some(creep =>
