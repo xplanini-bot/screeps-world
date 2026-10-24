@@ -321,10 +321,12 @@ function manageSpawning(spawn) {
         !!advancedUpgrader.findControllerContainer(spawn.room);
 
     const desiredUpgraders =
-        !hasContainers ||
-            (controllerContainerExists && extensions.length > 17)
-            ? 0
-            : DESIRED_UPGRADERS;
+    !hasContainers ||
+        (controllerContainerExists && extensions.length > 17)
+        ? 0
+        : extensions.length === 0
+            ? 1
+            : 2;
 
     // Приоритет создания
     const roles = [
