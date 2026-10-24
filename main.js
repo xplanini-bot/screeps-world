@@ -106,10 +106,16 @@ const CARRIER_BODY_Version_8 = [
     CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY,
     MOVE, MOVE, MOVE, MOVE, MOVE, MOVE, MOVE
 ];
-// Тела для строителей
-const MINER_BODY_Version_1 = [
-    WORK, WORK, 
+// Тела для шахтёров
+
+const MINER_BODY_Version_0 = [
+    WORK, WORK,
     MOVE, MOVE
+]; // 300 энергии
+
+const MINER_BODY_Version_1 = [
+    WORK, WORK, WORK,
+    MOVE
 ]; // 350 энергии
 
 const MINER_BODY_Version_4 = [
@@ -125,7 +131,7 @@ const MINER_BODY_Version_6 = [
 const MINER_BODY_Version_9 = [
     WORK, WORK, WORK, WORK, WORK, WORK,
     MOVE, MOVE, MOVE
-];
+]; // 750 энергии
 
 // Создание крипов
 function manageSpawning(spawn) {
@@ -300,8 +306,10 @@ function manageSpawning(spawn) {
         minerBody = MINER_BODY_Version_6;
     } else if (extensions.length >= 4) {
         minerBody = MINER_BODY_Version_4;
-    } else {
+    } else if (extensions.length >= 1) {
         minerBody = MINER_BODY_Version_1;
+    } else {
+        minerBody = MINER_BODY_Version_0;
     }
 
     const mines = calculateMineNeeds(spawn.room);
@@ -322,10 +330,10 @@ function manageSpawning(spawn) {
 
     // условия создания апгрейдеров и их кол-во
     const desiredUpgraders =
-    !hasContainers ||
-        (controllerContainerExists && extensions.length > 17)
-        ? 0
-        : 1;
+        !hasContainers ||
+            (controllerContainerExists && extensions.length > 17)
+            ? 0
+            : 1;
 
     // Приоритет создания
     const roles = [
