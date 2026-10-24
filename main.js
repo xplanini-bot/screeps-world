@@ -336,7 +336,7 @@ function manageSpawning(spawn) {
             (controllerContainerExists && extensions.length > 17)
             ? 0
             : extensions.length >= 5
-                ? 2
+                ? 3
                 : 1;
 
     // Приоритет создания
