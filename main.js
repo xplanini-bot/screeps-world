@@ -62,8 +62,10 @@ const UPGRADER_BODY_Version_7 = [
 // Тела строителей по поколениям Extensions
 
 const BUILDER_BODY_Version_0 = [
-    WORK, CARRY, MOVE
-];
+    WORK, WORK,
+    CARRY,
+    MOVE
+]; // 300 энергии
 
 const BUILDER_BODY_Version_2 = [
     WORK, WORK,
