@@ -405,7 +405,7 @@ function manageSpawning(spawn) {
 );
 
 console.log(
-    "[ШАХТЁР] Проверка создания:",
+    "[ШАХТЁР] Проверка создания",
     "комната:", mine.roomName,
     "уровень:", mine.level,
     "энергия:", spawn.room.energyAvailable,
