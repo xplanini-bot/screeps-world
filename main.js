@@ -3507,15 +3507,15 @@ function calculateMineNeeds(room) {
     const mines = analyzeMines(room);
 
     return mines.map(mine => {
-        // Проверяем наличие мощного шахтёра на этой шахте
-        const hasPowerfulMiner = Object.values(Game.creeps).some(creep =>
+        // Проверяем наличие майнера на этой шахте
+        const hasMiner = Object.values(Game.creeps).some(creep =>
             creep.memory.role === "miner" &&
             creep.memory.mineId === mine.id &&
-            creep.memory.mineRoomName === room.name &&
-            creep.body.filter(part => part.type === WORK).length >= 6
+            creep.memory.mineRoomName === room.name
         );
 
-        const desiredHarvesters = hasPowerfulMiner
+        // Если на шахте есть майнер, обычные харвестеры не нужны
+        const desiredHarvesters = hasMiner
             ? 0
             : mine.level === 1
                 ? mine.availablePositions
