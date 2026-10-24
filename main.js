@@ -108,8 +108,8 @@ const CARRIER_BODY_Version_8 = [
 ];
 // Тела для строителей
 const MINER_BODY_Version_1 = [
-    WORK, WORK, WORK,
-    MOVE
+    WORK, WORK, 
+    MOVE, MOVE
 ]; // 350 энергии
 
 const MINER_BODY_Version_4 = [
@@ -400,26 +400,11 @@ function manageSpawning(spawn) {
         }
 
         const cost = minerBody.reduce(
-    (total, part) => total + BODYPART_COST[part],
-    0
-);
+            (total, part) => total + BODYPART_COST[part],
+            0
+        );
 
-console.log(
-    "[ШАХТЁР] Проверка создания",
-    "комната:", mine.roomName,
-    "уровень:", mine.level,
-    "энергия:", spawn.room.energyAvailable,
-    "стоимость тела:", cost,
-    "не хватает:", Math.max(0, cost - spawn.room.energyAvailable),
-    "частей тела:", minerBody.length,
-    "шахтёров на шахте:", minersOnMine.length,
-    "требуется:", mine.desiredMiners
-);
-
-if (spawn.room.energyAvailable < cost) {
-    console.log("[ШАХТЁР] Недостаточно энергии для создания");
-    break;
-}
+        if (spawn.room.energyAvailable < cost) break;
 
         const name = "Miner_" + Game.time;
 
