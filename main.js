@@ -254,9 +254,9 @@ function manageSpawning(spawn) {
         });
 
     // Строитель нужен только при наличии площадок и только если есть контейнер
-    
-const builderCount =
-    hasContainers && hasConstructionSitesForBuilder ? 1 : 0;
+
+    const builderCount =
+        hasContainers && hasConstructionSitesForBuilder ? 1 : 0;
 
 
 
@@ -321,10 +321,10 @@ const builderCount =
         !!advancedUpgrader.findControllerContainer(spawn.room);
 
     const desiredUpgraders =
-    !hasContainers ||
-    (controllerContainerExists && extensions.length > 17)
-        ? 0
-        : DESIRED_UPGRADERS;
+        !hasContainers ||
+            (controllerContainerExists && extensions.length > 17)
+            ? 0
+            : DESIRED_UPGRADERS;
 
     // Приоритет создания
     const roles = [
@@ -3489,7 +3489,14 @@ function analyzeMines(room) {
 // Расчёт потребности шахт в юнитах
 function calculateMineNeeds(room) {
     const mines = analyzeMines(room);
-
+    console.log(
+        `[ШАХТЫ] Комната ${room.name}: ` +
+        mines.map(mine =>
+            `Источник ${mine.id} — уровень ${mine.level}, ` +
+            `контейнер: ${mine.containerId ? "есть" : "нет"}`
+        ).join(" | ")
+    );
+    
     return mines.map(mine => {
         // Проверяем наличие мощного шахтёра на этой шахте
         const hasPowerfulMiner = Object.values(Game.creeps).some(creep =>
