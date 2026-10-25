@@ -130,7 +130,7 @@ const MINER_BODY_Version_6 = [
     MOVE, MOVE
 ]; // 600 энергии
 
-const MINER_BODY_Version_9 = [
+const MINER_BODY_Version_10 = [
     WORK, WORK, WORK, WORK, WORK, WORK, WORK,
     MOVE, MOVE
 ]; // 800 энергии
@@ -302,8 +302,8 @@ function manageSpawning(spawn) {
     // Выбор поколения шахтёра по количеству построенных Extensions
     let minerBody;
 
-    if (extensions.length >= 9) {
-        minerBody = MINER_BODY_Version_9;
+    if (extensions.length >= 10) {
+        minerBody = MINER_BODY_Version_10;
     } else if (extensions.length >= 6) {
         minerBody = MINER_BODY_Version_6;
     } else if (extensions.length >= 4) {
