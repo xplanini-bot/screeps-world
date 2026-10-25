@@ -417,6 +417,10 @@ function manageSpawning(spawn) {
             creep.ticksToLive !== undefined &&
             creep.ticksToLive <= 300
         );
+        // Нужен ли срочно сменщик шахтёра
+        const isMinerReplacement =
+            minersOnMine.length === mine.desiredMiners &&
+            minerNeedsReplacement;
 
         // Если шахтёров уже достаточно, создаём дополнительного
         // только тогда, когда старый скоро умрёт
@@ -433,7 +437,21 @@ function manageSpawning(spawn) {
             0
         );
 
-        if (spawn.room.energyAvailable < cost) break;
+        if (spawn.room.energyAvailable < cost) {
+            // Если ждём сменщика, не разрешаем создавать
+            // другие роли, пока не накопится нужная энергия
+            if (isMinerReplacement) {
+                console.log(
+                    "[ШАХТЁР] Ожидаем энергию для сменщика:",
+                    "нужно:", cost,
+                    "доступно:", spawn.room.energyAvailable
+                );
+
+                return true;
+            }
+
+            break;
+        }
 
         const name = "Miner_" + Game.time;
 
@@ -3720,10 +3738,13 @@ module.exports.loop = function () {
     //УПРАВЛЕНИЕ БАШНЕЙ
     manageTower();
 
-    manageSpawning(spawn);
-    military.manageSpawning(spawn);
-    reserver.manageSpawning(spawn);
-    advancedUpgrader.manageSpawning(spawn);
+    const minerReplacementWaiting = manageSpawning(spawn);
+
+    if (!minerReplacementWaiting) {
+        military.manageSpawning(spawn);
+        reserver.manageSpawning(spawn);
+        advancedUpgrader.manageSpawning(spawn);
+    }
 
     assignHarvestersToMines(homeRoom);
 
