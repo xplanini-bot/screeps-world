@@ -709,6 +709,31 @@ function runUpgrader(creep, homeRoom, containers) {
 
     // Если энергии нет — ищем контейнер с учётом резервов
     if (energy === 0) {
+
+        // Проверяем запас энергии в Storage
+        const storage = homeRoom.storage;
+
+        const storageHasSurplus = storage &&
+            storage.store[RESOURCE_ENERGY] >
+            storage.store.getCapacity(RESOURCE_ENERGY) * 0.1;
+
+        // Проверяем, осталась ли свободная ёмкость в расширителях
+        const extensionsNeedEnergy = homeRoom.find(
+            FIND_MY_STRUCTURES,
+            {
+                filter: structure =>
+                    structure.structureType === STRUCTURE_EXTENSION &&
+                    structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+            }
+        ).length > 0;
+
+        // Пока расширители не заполнены, сохраняем энергию для них,
+        // если в Storage нет запаса выше 20%
+        if (extensionsNeedEnergy && !storageHasSurplus) {
+            releaseEnergyReservation(creep);
+            return;
+        }
+
         let container = creep.memory.energyReservationTargetId
             ? Game.getObjectById(
                 creep.memory.energyReservationTargetId
