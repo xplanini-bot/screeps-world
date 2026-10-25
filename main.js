@@ -3,6 +3,8 @@ const reserver = require("reserver");
 const advancedUpgrader = require("advancedUpgrader");
 //логика размещения строений
 const construction = require("construction");
+//логика атакующих юнитов
+const attacker = require("attacker");
 
 const DESIRED_UPGRADERS = 2;
 //const DESIRED_BUILDERS = 1; // строитель теперь зависит от того есть ли строительная площадка
@@ -3767,6 +3769,7 @@ module.exports.loop = function () {
 
     if (!minerReplacementWaiting) {
         military.manageSpawning(spawn);
+        attacker.manageSpawning(spawn);
         reserver.manageSpawning(spawn);
         advancedUpgrader.manageSpawning(spawn);
     }
@@ -3861,7 +3864,9 @@ module.exports.loop = function () {
         if (creep.memory.role === "emergencyAttacker") {
             military.runEmergencyAttacker(creep);
         }
-
+        if (creep.memory.role === "attacker") {
+            attacker.runAttacker(creep);
+        }
     }
 };
 
