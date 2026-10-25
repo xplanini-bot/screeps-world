@@ -330,18 +330,23 @@ function manageSpawning(spawn) {
     const controllerContainerExists =
         !!advancedUpgrader.findControllerContainer(spawn.room);
 
+    // Проверяем наличие хотя бы одного майнера
+    const hasMiner = Object.values(Game.creeps).some(
+        creep => creep.memory.role === "miner"
+    );
     // Условия создания апгрейдеров и их количество
-const desiredUpgraders =
-    !hasContainers ||
-    (controllerContainerExists && extensions.length > 17)
-        ? 0
-        : spawn.room.controller.level >= 3 &&
-          extensions.length >= 5 &&
-          extensions.length < 10
-            ? 1
-            : extensions.length >= 5
-                ? 3
-                : 1;
+    const desiredUpgraders =
+        !hasContainers ||
+            !hasMiner ||
+            (controllerContainerExists && extensions.length > 17)
+            ? 0
+            : spawn.room.controller.level >= 3 &&
+                extensions.length >= 5 &&
+                extensions.length < 10
+                ? 1
+                : extensions.length >= 5
+                    ? 3
+                    : 1;
 
     // Приоритет создания
     const roles = [
@@ -745,17 +750,17 @@ function runUpgrader(creep, homeRoom, containers) {
     if (!controller) return;
 
     // Сначала подходим вплотную к контроллеру
-if (creep.pos.getRangeTo(controller) > 1) {
-    creep.moveTo(controller, {
-        range: 1,
-        reusePath: 5
-    });
+    if (creep.pos.getRangeTo(controller) > 1) {
+        creep.moveTo(controller, {
+            range: 1,
+            reusePath: 5
+        });
 
-    return;
-}
+        return;
+    }
 
-// Только находясь на соседней клетке, улучшаем контроллер
-creep.upgradeController(controller);
+    // Только находясь на соседней клетке, улучшаем контроллер
+    creep.upgradeController(controller);
 }
 
 
