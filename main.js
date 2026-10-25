@@ -334,19 +334,26 @@ function manageSpawning(spawn) {
     const hasMiner = Object.values(Game.creeps).some(
         creep => creep.memory.role === "miner"
     );
+    // Проверяем наличие перевозчика
+    const hasCarrierForUpgraders = Object.values(Game.creeps).some(
+        creep => creep.memory.role === "carrier"
+    );
+
     // Условия создания апгрейдеров и их количество
     const desiredUpgraders =
         !hasContainers ||
             !hasMiner ||
             (controllerContainerExists && extensions.length > 17)
             ? 0
-            : spawn.room.controller.level >= 3 &&
-                extensions.length >= 5 &&
-                extensions.length < 10
+            : !hasCarrierForUpgraders
                 ? 1
-                : extensions.length >= 5
-                    ? 3
-                    : 1;
+                : spawn.room.controller.level >= 3 &&
+                    extensions.length >= 5 &&
+                    extensions.length < 10
+                    ? 1
+                    : extensions.length >= 5
+                        ? 3
+                        : 1;
 
     // Приоритет создания
     const roles = [
