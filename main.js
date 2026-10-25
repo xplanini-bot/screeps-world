@@ -131,9 +131,9 @@ const MINER_BODY_Version_6 = [
 ]; // 600 энергии
 
 const MINER_BODY_Version_9 = [
-    WORK, WORK, WORK, WORK, WORK, WORK,
-    MOVE, MOVE, MOVE
-]; // 750 энергии
+    WORK, WORK, WORK, WORK, WORK, WORK, WORK,
+    MOVE, MOVE
+]; // 800 энергии
 
 // Создание крипов
 function manageSpawning(spawn) {
