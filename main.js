@@ -7,7 +7,7 @@ const construction = require("construction");
 const attacker = require("attacker");
 const upgrader = require("upgrader");
 const miner = require("miner");
-const builderModule = require("builder");
+const builder = require("builder");
 
 // Количество необходимых ремонтников
 // const repairerCount = 1; теперь зависит от того есть ли что чинить (хотябы 1 контейнер)
@@ -1616,7 +1616,7 @@ function runCarrier(creep, spawn, homeRoom) {
 
         // Приоритет 3: Строитель из очереди
         if (!target) {
-            const builder = builderModule.claimBuilderEnergyRequest(carrier);
+            const builder = builder.claimBuilderEnergyRequest(carrier);
 
             if (builder) {
                 runBuilderDeliveryMode(creep, homeRoom);
@@ -2966,7 +2966,7 @@ module.exports.loop = function () {
         reserver.manageSpawning(spawn);
         advancedUpgrader.manageSpawning(spawn);
         upgrader.manageSpawning(spawn, REMOTE_ROOMS);
-        builderModule.manageSpawning(spawn, REMOTE_ROOMS);
+        builder.manageSpawning(spawn, REMOTE_ROOMS);
     }
 
     assignHarvestersToMines(homeRoom);
@@ -3032,8 +3032,8 @@ module.exports.loop = function () {
             });
         }
 
-        if (creep.memory.role === builderModule.role) {
-            builderModule.run(creep, homeRoom, REMOTE_ROOMS, {
+        if (creep.memory.role === builder.role) {
+            builder.run(creep, homeRoom, REMOTE_ROOMS, {
                 releaseEnergyReservation,
                 findEnergyContainer,
                 getReservedEnergy,
