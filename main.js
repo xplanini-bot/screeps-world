@@ -7,6 +7,7 @@ const construction = require("construction");
 const attacker = require("attacker");
 const upgrader = require("upgrader");
 const miner = require("miner");
+const builder = require("builder");
 
 // Количество необходимых ремонтников
 // const repairerCount = 1; теперь зависит от того есть ли что чинить (хотябы 1 контейнер)
@@ -37,31 +38,6 @@ const TOWER_SUPPORT_BODY = [
     MOVE
 ];
 
-// Тела строителей по поколениям Extensions
-
-const BUILDER_BODY_Version_0 = [
-    WORK, WORK,
-    CARRY,
-    MOVE
-]; // 300 энергии
-
-const BUILDER_BODY_Version_2 = [
-    WORK, WORK,
-    CARRY, CARRY,
-    MOVE, MOVE
-];
-
-const BUILDER_BODY_Version_5 = [
-    WORK, WORK, WORK,
-    CARRY, CARRY,
-    MOVE, MOVE, MOVE
-];
-
-const BUILDER_BODY_Version_8 = [
-    WORK, WORK, WORK, WORK,
-    CARRY, CARRY, CARRY,
-    MOVE, MOVE, MOVE
-];
 // Тело разведчика
 const SCOUT_BODY = [MOVE];
 
@@ -184,43 +160,6 @@ function manageSpawning(spawn) {
     });
 
 
-    // Количество необходимых строителей
-
-    // Проверяем, есть ли строительные площадки
-    const constructionRoomNames = [
-        spawn.room.name,
-        ...REMOTE_ROOMS
-    ];
-
-    const hasConstructionSitesForBuilder =
-        [...new Set(constructionRoomNames)].some(roomName => {
-            const room = Game.rooms[roomName];
-
-            if (!room) return false;
-
-            return room.find(FIND_MY_CONSTRUCTION_SITES).length > 0;
-        });
-
-    // Строитель нужен только при наличии площадок и только если есть контейнер
-
-    const builderCount =
-        hasContainers && hasConstructionSitesForBuilder ? 1 : 0;
-
-
-
-    // Выбираем поколение строителя по количеству Extensions
-    let builderBody;
-    if (extensions.length >= 8) {
-        builderBody = BUILDER_BODY_Version_8;
-    } else if (extensions.length >= 5) {
-        builderBody = BUILDER_BODY_Version_5;
-    } else if (extensions.length >= 2) {
-        builderBody = BUILDER_BODY_Version_2;
-    } else {
-        builderBody = BUILDER_BODY_Version_0;
-    }
-
-
     // Выбираем поколение перевозчика
     let carrierBody;
 
@@ -260,18 +199,11 @@ function manageSpawning(spawn) {
             prefix: "Harvester",
             body: CREEP_BODY
         },
-
-        {
-            role: "builder",
-            desired: builderCount,
-            prefix: "Builder",
-            body: builderBody
-        },
         {
             role: "repairer",
             desired: repairerCount,
             prefix: "Repairer",
-            body: builderBody
+            body: builder.getBody(spawn.room)
         },
         {
             role: "towerSupport",
@@ -497,108 +429,6 @@ function runHarvester(creep, spawn, containers, site) {
     deliverEnergy(creep, spawn, containers, site);
 }
 
-/* Очередь строителей, ожидающих энергию */
-
-function removeBuilderEnergyRequest(builderName) {
-    if (!Array.isArray(Memory.builderEnergyQueue)) {
-        Memory.builderEnergyQueue = [];
-        return;
-    }
-
-    Memory.builderEnergyQueue =
-        Memory.builderEnergyQueue.filter(name => name !== builderName);
-}
-
-function requestBuilderEnergy(builder) {
-    if (!Array.isArray(Memory.builderEnergyQueue)) {
-        Memory.builderEnergyQueue = [];
-    }
-
-    // Если перевозчик уже закреплён за строителем,
-    // повторную заявку не создаём
-    const carrierName = builder.memory.energyDeliveryCarrier;
-    const carrier = carrierName ? Game.creeps[carrierName] : null;
-
-    if (
-        carrier &&
-        carrier.memory.builderDeliveryTarget === builder.name
-    ) {
-        removeBuilderEnergyRequest(builder.name);
-        return;
-    }
-
-    // Удаляем устаревшее закрепление
-    if (carrierName) {
-        delete builder.memory.energyDeliveryCarrier;
-    }
-
-    // Не допускаем дубликатов в очереди
-    if (!Memory.builderEnergyQueue.includes(builder.name)) {
-        Memory.builderEnergyQueue.push(builder.name);
-
-        console.log(
-            "[СТРОИТЕЛЬ] Заявка на энергию:",
-            builder.name
-        );
-    }
-}
-
-// Перевозчик забирает одну заявку из очереди
-function claimBuilderEnergyRequest(carrier) {
-    if (!Array.isArray(Memory.builderEnergyQueue)) {
-        Memory.builderEnergyQueue = [];
-    }
-
-    while (Memory.builderEnergyQueue.length > 0) {
-        const builderName = Memory.builderEnergyQueue.shift();
-        const builder = Game.creeps[builderName];
-
-        // Строитель погиб, сменил роль или уже получил энергию
-        if (
-            !builder ||
-            builder.memory.role !== "builder" ||
-            builder.store[RESOURCE_ENERGY] > 0
-        ) {
-            continue;
-        }
-
-        // Проверяем, не обслуживает ли его другой перевозчик
-        const assignedCarrierName =
-            builder.memory.energyDeliveryCarrier;
-
-        const assignedCarrier = assignedCarrierName
-            ? Game.creeps[assignedCarrierName]
-            : null;
-
-        if (
-            assignedCarrier &&
-            assignedCarrier.memory.builderDeliveryTarget === builder.name
-        ) {
-            continue;
-        }
-
-        // Старое назначение больше не действует
-        if (assignedCarrierName) {
-            delete builder.memory.energyDeliveryCarrier;
-        }
-
-        // Закрепляем строителя за этим перевозчиком
-        carrier.memory.builderDeliveryTarget = builder.name;
-        builder.memory.energyDeliveryCarrier = carrier.name;
-
-        console.log(
-            "[ПЕРЕВОЗЧИК] Принята заявка:",
-            carrier.name,
-            "->",
-            builder.name
-        );
-
-        return builder;
-    }
-
-    return null;
-}
-
 // Снимаем закрепление перевозчика за строителем
 function clearBuilderEnergyAssignment(carrier) {
     const builderName = carrier.memory.builderDeliveryTarget;
@@ -617,7 +447,6 @@ function clearBuilderEnergyAssignment(carrier) {
 }
 
 // Обработка отдельного режима доставки строителю
-
 function runBuilderDeliveryMode(carrier, homeRoom) {
     const builderName = carrier.memory.builderDeliveryTarget;
     const builder = builderName ? Game.creeps[builderName] : null;
@@ -678,216 +507,6 @@ function runBuilderDeliveryMode(carrier, homeRoom) {
     return true;
 }
 
-
-function runBuilder(creep, spawn, homeRoom) {
-    // Пока строитель создаётся, не обрабатываем его задачи
-    if (creep.spawning) return;
-
-    const hasCarrier = Object.values(Game.creeps).some(
-        c => c.memory.role === "carrier"
-    );
-
-    // Если строитель получил энергию, его заявка больше не нужна
-    if (creep.store[RESOURCE_ENERGY] > 0) {
-        removeBuilderEnergyRequest(creep.name);
-    }
-
-    // Энергии нет
-    if (creep.store[RESOURCE_ENERGY] === 0) {
-
-        if (hasCarrier) {
-            // Проверяем, закреплён ли за строителем живой перевозчик
-            const carrierName = creep.memory.energyDeliveryCarrier;
-            const carrier = carrierName
-                ? Game.creeps[carrierName]
-                : null;
-
-            if (
-                carrier &&
-                carrier.memory.builderDeliveryTarget === creep.name
-            ) {
-                removeBuilderEnergyRequest(creep.name);
-                releaseEnergyReservation(creep);
-                return;
-            }
-
-            // Закрепление устарело: перевозчик мог погибнуть
-            if (carrierName) {
-                delete creep.memory.energyDeliveryCarrier;
-            }
-
-            // Оставляем заявку и ждём доставки
-            requestBuilderEnergy(creep);
-            releaseEnergyReservation(creep);
-            return;
-        }
-
-        // Перевозчиков нет — сохраняем прежний режим
-        removeBuilderEnergyRequest(creep.name);
-
-        const roomNames = [
-            creep.room.name,
-            homeRoom.name,
-            ...REMOTE_ROOMS
-        ];
-
-        let energyContainer = creep.memory.energyReservationTargetId
-            ? Game.getObjectById(
-                creep.memory.energyReservationTargetId
-            )
-            : null;
-
-        if (
-            !energyContainer ||
-            !energyContainer.store ||
-            energyContainer.store[RESOURCE_ENERGY] === 0
-        ) {
-            releaseEnergyReservation(creep);
-
-            const neededEnergy =
-                creep.store.getCapacity(RESOURCE_ENERGY);
-
-            energyContainer = findEnergyContainer(
-                creep,
-                roomNames,
-                neededEnergy
-            );
-
-            if (!energyContainer) return;
-
-            const reserved = getReservedEnergy(
-                energyContainer.id,
-                creep.name
-            );
-
-            const available =
-                energyContainer.store[RESOURCE_ENERGY] - reserved;
-
-            if (available <= 0) return;
-
-            reserveEnergy(
-                creep,
-                energyContainer,
-                Math.min(neededEnergy, available)
-            );
-        }
-
-        const result = creep.withdraw(
-            energyContainer,
-            RESOURCE_ENERGY,
-            creep.memory.energyReservationAmount
-        );
-
-        if (result === ERR_NOT_IN_RANGE) {
-            creep.moveTo(energyContainer, {
-                range: 1,
-                reusePath: 20
-            });
-        } else if (
-            result === OK ||
-            result === ERR_NOT_ENOUGH_RESOURCES ||
-            result === ERR_INVALID_TARGET
-        ) {
-            releaseEnergyReservation(creep);
-        }
-
-        return;
-    }
-
-
-    // Проверяем ранее выбранную строительную площадку
-    let targetSite = creep.memory.buildTargetId
-        ? Game.getObjectById(creep.memory.buildTargetId)
-        : null;
-
-    // Если площадка исчезла или строительство завершено,
-    // выбираем новую
-    if (
-        !targetSite ||
-        targetSite.progress >= targetSite.progressTotal
-    ) {
-        delete creep.memory.buildTargetId;
-        targetSite = null;
-
-        // Сначала домашняя комната, затем удалённые
-        const roomNames = [
-            homeRoom.name,
-            ...REMOTE_ROOMS
-        ];
-
-
-        for (const roomName of [...new Set(roomNames)]) {
-            const room = Game.rooms[roomName];
-
-            if (!room) continue;
-
-            const sites = room.find(FIND_MY_CONSTRUCTION_SITES);
-
-            for (const site of sites) {
-                // Проверяем, не закреплена ли площадка
-                // за другим строителем
-                const assignedToOtherBuilder =
-                    Object.values(Game.creeps).some(
-                        otherCreep =>
-                            otherCreep.name !== creep.name &&
-                            otherCreep.memory.role === "builder" &&
-                            otherCreep.memory.buildTargetId === site.id
-                    );
-
-                if (assignedToOtherBuilder) continue;
-
-                // Назначаем свободную площадку
-                targetSite = site;
-                creep.memory.buildTargetId = site.id;
-                break;
-            }
-
-            if (targetSite) break;
-        }
-
-    }
-
-    // Подходящих площадок нет
-    if (!targetSite) {
-        removeBuilderEnergyRequest(creep.name);
-        return;
-    }
-
-
-    // Если строитель находится на границе комнаты,
-    // в которой расположена строительная площадка,
-    // сначала отходим к центру комнаты
-    if (
-        creep.room.name === targetSite.room.name &&
-        (
-            creep.pos.x === 0 ||
-            creep.pos.x === 49 ||
-            creep.pos.y === 0 ||
-            creep.pos.y === 49
-        )
-    ) {
-        creep.moveTo(
-            new RoomPosition(25, 25, creep.room.name),
-            {
-                reusePath: 0
-            }
-        );
-
-        return;
-    }
-
-    // Строитель занимается строительством
-    const result = creep.build(targetSite);
-
-    // Если площадка слишком далеко — движемся к ней
-    if (result === ERR_NOT_IN_RANGE) {
-        creep.moveTo(targetSite, {
-            reusePath: 5,
-            maxRooms: 16
-        });
-    }
-
-}
 
 
 // Ремонтник: проверка контейнеров по очереди
@@ -1997,7 +1616,7 @@ function runCarrier(creep, spawn, homeRoom) {
 
         // Приоритет 3: Строитель из очереди
         if (!target) {
-            const builder = claimBuilderEnergyRequest(creep);
+            const builder = builder.claimBuilderEnergyRequest(carrier)
 
             if (builder) {
                 runBuilderDeliveryMode(creep, homeRoom);
@@ -3347,6 +2966,7 @@ module.exports.loop = function () {
         reserver.manageSpawning(spawn);
         advancedUpgrader.manageSpawning(spawn);
         upgrader.manageSpawning(spawn, REMOTE_ROOMS);
+        builder.manageSpawning(spawn, REMOTE_ROOMS);
     }
 
     assignHarvestersToMines(homeRoom);
@@ -3412,8 +3032,13 @@ module.exports.loop = function () {
             });
         }
 
-        if (creep.memory.role === "builder") {
-            runBuilder(creep, spawn, homeRoom);
+        if (creep.memory.role === builder.role) {
+            builder.run(creep, homeRoom, REMOTE_ROOMS, {
+                releaseEnergyReservation,
+                findEnergyContainer,
+                getReservedEnergy,
+                reserveEnergy
+            });
         }
         if (creep.memory.role === "repairer") {
             runRepairer(creep, homeRoom);
