@@ -6,8 +6,8 @@ const construction = require("construction");
 //логика атакующих юнитов
 const attacker = require("attacker");
 const upgrader = require("upgrader");
+const miner = require("miner");
 
-//const DESIRED_BUILDERS = 1; // строитель теперь зависит от того есть ли строительная площадка
 // Количество необходимых ремонтников
 // const repairerCount = 1; теперь зависит от того есть ли что чинить (хотябы 1 контейнер)
 const DESIRED_CARRIERS = 2; // Перевозчик
@@ -86,32 +86,6 @@ const CARRIER_BODY_Version_8 = [
     CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY,
     MOVE, MOVE, MOVE, MOVE, MOVE, MOVE, MOVE
 ];
-// Тела для шахтёров
-
-const MINER_BODY_Version_0 = [
-    WORK, WORK,
-    MOVE, MOVE
-]; // 300 энергии
-
-const MINER_BODY_Version_1 = [
-    WORK, WORK, WORK,
-    MOVE
-]; // 350 энергии
-
-const MINER_BODY_Version_4 = [
-    WORK, WORK, WORK, WORK,
-    MOVE, MOVE
-]; // 500 энергии
-
-const MINER_BODY_Version_6 = [
-    WORK, WORK, WORK, WORK, WORK,
-    MOVE, MOVE
-]; // 600 энергии
-
-const MINER_BODY_Version_10 = [
-    WORK, WORK, WORK, WORK, WORK, WORK, WORK,
-    MOVE, MOVE
-]; // 800 энергии
 
 // Создание крипов
 function manageSpawning(spawn) {
@@ -264,33 +238,11 @@ function manageSpawning(spawn) {
     }
 
 
-
-    // Выбор поколения шахтёра по количеству построенных Extensions
-    let minerBody;
-
-    if (extensions.length >= 10) {
-        minerBody = MINER_BODY_Version_10;
-    } else if (extensions.length >= 6) {
-        minerBody = MINER_BODY_Version_6;
-    } else if (extensions.length >= 4) {
-        minerBody = MINER_BODY_Version_4;
-    } else if (extensions.length >= 1) {
-        minerBody = MINER_BODY_Version_1;
-    } else {
-        minerBody = MINER_BODY_Version_0;
-    }
-
-    const mines = calculateMineNeeds(spawn.room);
-
     const allMines = calculateAllMineNeeds(spawn.room);
 
     const desiredHarvesters = allMines.reduce(
         (total, mine) => total + mine.desiredHarvesters,
         0
-    );
-
-    const eligibleMines = allMines.filter(
-        mine => mine.desiredMiners > 0 && mine.level >= 2
     );
 
 
@@ -329,92 +281,10 @@ function manageSpawning(spawn) {
         }
     ];
 
-
-
-    // Проверяем потребность в шахтёрах отдельно для каждой шахты
-    const assignedMiners = Object.values(Game.creeps)
-        .filter(creep => creep.memory.role === "miner");
-
-    for (const mine of eligibleMines) {
-        const minersOnMine = assignedMiners.filter(creep =>
-            creep.memory.mineId === mine.id &&
-            (creep.memory.mineRoomName || creep.memory.targetRoom) === mine.roomName
-        );
-
-        // Не создаём третьего шахтёра для одной шахты
-        if (minersOnMine.length > mine.desiredMiners + 1) continue;
-
-        // Проверяем, заканчивается ли жизнь действующего шахтёра
-        const minerNeedsReplacement = minersOnMine.some(creep =>
-            !creep.spawning &&
-            creep.ticksToLive !== undefined &&
-            creep.ticksToLive <= 300
-        );
-        // Нужен ли срочно сменщик шахтёра
-        const isMinerReplacement =
-            minersOnMine.length === mine.desiredMiners &&
-            minerNeedsReplacement;
-
-        // Если шахтёров уже достаточно, создаём дополнительного
-        // только тогда, когда старый скоро умрёт
-        if (minersOnMine.length >= mine.desiredMiners) {
-            if (!minerNeedsReplacement) continue;
-
-            // Если дополнительный шахтёр уже появился,
-            // повторно его не создаём
-            if (minersOnMine.length > mine.desiredMiners) continue;
-        }
-
-        const cost = minerBody.reduce(
-            (total, part) => total + BODYPART_COST[part],
-            0
-        );
-
-        if (spawn.room.energyAvailable < cost) {
-            // Если ждём сменщика, не разрешаем создавать
-            // другие роли, пока не накопится нужная энергия
-            if (isMinerReplacement) {
-                console.log(
-                    "[ШАХТЁР] Ожидаем энергию для сменщика:",
-                    "нужно:", cost,
-                    "доступно:", spawn.room.energyAvailable
-                );
-
-                return true;
-            }
-
-            break;
-        }
-
-        const name = "Miner_" + Game.time;
-
-        const result = spawn.spawnCreep(
-            minerBody,
-            name,
-            {
-                memory: {
-                    role: "miner",
-                    working: false,
-                    mineId: mine.id,
-                    mineRoomName: mine.roomName,
-                    targetRoom: mine.roomName
-                }
-            }
-        );
-
-        if (result === OK) {
-            console.log(
-                "[ШАХТЁР] Создаём шахтёра для шахты:",
-                mine.id,
-                minerNeedsReplacement
-                    ? "— плановая замена"
-                    : "— обычное создание"
-            );
-        }
-
+    // Передаём создание шахтёров модулю miner
+    if (miner.manageSpawning(spawn, calculateAllMineNeeds)) {
         return;
     }
-
 
     for (const item of roles) {
 
@@ -1017,113 +887,6 @@ function runBuilder(creep, spawn, homeRoom) {
         });
     }
 
-}
-
-// Шахтёр поиск назначенного источника
-
-// Шахтёр — поиск назначенного источника
-
-// Шахтёр — поиск назначенного источника
-function runMiner(creep, homeRoom) {
-    const mine = creep.memory.mineId
-        ? Game.getObjectById(creep.memory.mineId)
-        : null;
-
-    if (!mine) return;
-
-    const room = mine.room;
-    if (!room) return;
-
-    // Временный режим: разбор лишнего контейнера
-    const dismantleId = creep.memory.dismantleContainerId;
-
-    if (dismantleId) {
-        const target = Game.getObjectById(dismantleId);
-
-        // Контейнер уже уничтожен — возвращаемся к добыче
-        if (!target) {
-            delete creep.memory.dismantleContainerId;
-        } else {
-            // Разбираем только контейнер возле своего источника
-            const nearbyContainers = mine.pos.findInRange(
-                FIND_STRUCTURES,
-                1,
-                {
-                    filter: structure =>
-                        structure.structureType === STRUCTURE_CONTAINER
-                }
-            );
-
-            // Последний контейнер шахты не трогаем
-            if (
-                target.structureType !== STRUCTURE_CONTAINER ||
-                target.pos.roomName !== room.name ||
-                target.pos.getRangeTo(mine) > 1 ||
-                nearbyContainers.length <= 1
-            ) {
-                delete creep.memory.dismantleContainerId;
-            } else {
-                const result = creep.dismantle(target);
-
-                if (result === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(target, {
-                        range: 1,
-                        reusePath: 20
-                    });
-                }
-
-                // Пока контейнер разбирается, добычу не выполняем
-                return;
-            }
-        }
-    }
-
-    const containers = mine.pos.findInRange(
-        FIND_STRUCTURES,
-        1,
-        {
-            filter: structure =>
-                structure.structureType === STRUCTURE_CONTAINER
-        }
-    );
-
-    if (containers.length === 0) return;
-
-    // Сначала ищем контейнер, на котором стоит шахтёр
-    let container = containers.find(c =>
-        creep.pos.isEqualTo(c.pos)
-    );
-
-    // Если текущий контейнер заполнен,
-    // ищем другой контейнер со свободным местом
-    if (
-        container &&
-        container.store.getFreeCapacity(RESOURCE_ENERGY) === 0
-    ) {
-        container = containers.find(c =>
-            !creep.pos.isEqualTo(c.pos) &&
-            c.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-        );
-    }
-
-    // Если шахтёр ещё не стоит на выбранном контейнере
-    if (!container) {
-        container = containers.find(c =>
-            c.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-        );
-    }
-
-    // Если все контейнеры заполнены — ждём
-    if (!container) return;
-
-    // Переходим к выбранному контейнеру
-    if (!creep.pos.isEqualTo(container.pos)) {
-        creep.moveTo(container);
-        return;
-    }
-
-    // Добываем энергию
-    creep.harvest(mine);
 }
 
 
@@ -3655,8 +3418,8 @@ module.exports.loop = function () {
         if (creep.memory.role === "repairer") {
             runRepairer(creep, homeRoom);
         }
-        if (creep.memory.role === "miner") {
-            runMiner(creep, homeRoom);
+        if (creep.memory.role === miner.role) {
+            miner.run(creep, homeRoom);
         }
         if (creep.memory.role === "scout") {
             runScout(creep);
