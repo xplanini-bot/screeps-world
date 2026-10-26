@@ -150,8 +150,7 @@ function manageSpawning(spawn, remoteRooms) {
         console.log("[UPGRADER] Создаём апгрейдера:", name);
     }
 
-    // Попытка создания выполнена — сохраняем порядок очереди
-    return true;
+    return result === OK;
 }
 
 module.exports = {

@@ -7,7 +7,6 @@ const construction = require("construction");
 const attacker = require("attacker");
 const upgrader = require("upgrader");
 
-//const DESIRED_UPGRADERS = 2;
 //const DESIRED_BUILDERS = 1; // строитель теперь зависит от того есть ли строительная площадка
 // Количество необходимых ремонтников
 // const repairerCount = 1; теперь зависит от того есть ли что чинить (хотябы 1 контейнер)
@@ -36,30 +35,6 @@ const TOWER_SUPPORT_BODY = [
     MOVE,
     MOVE,
     MOVE
-];
-
-// Тела апгрейдеров
-
-const UPGRADER_BODY_Version_0 = [
-    WORK, CARRY, MOVE
-];
-
-const UPGRADER_BODY_Version_2 = [
-    WORK, WORK,
-    CARRY, CARRY,
-    MOVE, MOVE
-];
-
-const UPGRADER_BODY_Version_5 = [
-    WORK, WORK, WORK,
-    CARRY, CARRY,
-    MOVE, MOVE, MOVE
-];
-
-const UPGRADER_BODY_Version_7 = [
-    WORK, WORK, WORK,
-    CARRY, CARRY, CARRY, CARRY,
-    MOVE, MOVE, MOVE
 ];
 
 // Тела строителей по поколениям Extensions
@@ -651,127 +626,6 @@ function runHarvester(creep, spawn, containers, site) {
     // Сдаём энергию на домашней базе
     deliverEnergy(creep, spawn, containers, site);
 }
-
-
-
-
-// Улучшатель контроллера
-function runUpgrader(creep, homeRoom, containers) {
-    updateWorkingState(creep);
-
-    const energy = creep.store[RESOURCE_ENERGY];
-
-    // Если энергия уже получена, освобождаем резерв
-    if (energy > 0) {
-        releaseEnergyReservation(creep);
-    }
-
-    // Если энергии нет — ищем контейнер с учётом резервов
-    if (energy === 0) {
-
-        // Проверяем запас энергии в Storage
-        const storage = homeRoom.storage;
-
-        const storageHasSurplus = storage &&
-            storage.store[RESOURCE_ENERGY] >
-            storage.store.getCapacity(RESOURCE_ENERGY) * 0.1;
-
-        // Проверяем, осталась ли свободная ёмкость в расширителях
-        const extensionsNeedEnergy = homeRoom.find(
-            FIND_MY_STRUCTURES,
-            {
-                filter: structure =>
-                    structure.structureType === STRUCTURE_EXTENSION &&
-                    structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-            }
-        ).length > 0;
-
-        // Пока расширители не заполнены, сохраняем энергию для них,
-        // если в Storage нет запаса выше 20%
-        if (extensionsNeedEnergy && !storageHasSurplus) {
-            releaseEnergyReservation(creep);
-            return;
-        }
-
-        let container = creep.memory.energyReservationTargetId
-            ? Game.getObjectById(
-                creep.memory.energyReservationTargetId
-            )
-            : null;
-
-        // Проверяем сохранённую цель
-        if (
-            !container ||
-            !container.store ||
-            container.store[RESOURCE_ENERGY] === 0
-        ) {
-            releaseEnergyReservation(creep);
-            container = findEnergyContainer(
-                creep,
-                [homeRoom.name],
-                1
-            );
-
-            if (!container) return;
-
-            const reserved = getReservedEnergy(
-                container.id,
-                creep.name
-            );
-
-            const available =
-                container.store[RESOURCE_ENERGY] - reserved;
-
-            reserveEnergy(
-                creep,
-                container,
-                Math.min(
-                    creep.store.getCapacity(RESOURCE_ENERGY),
-                    available
-                )
-            );
-        }
-
-        const result = creep.withdraw(
-            container,
-            RESOURCE_ENERGY
-        );
-
-        if (result === ERR_NOT_IN_RANGE) {
-            creep.moveTo(container, {
-                range: 1,
-                reusePath: 20
-            });
-        } else if (
-            result === ERR_NOT_ENOUGH_RESOURCES ||
-            result === ERR_INVALID_TARGET
-        ) {
-            releaseEnergyReservation(creep);
-        }
-
-        // При успешном получении сохраняем резерв до следующего тика
-        return;
-    }
-
-    // Улучшаем домашний контроллер
-    const controller = homeRoom.controller;
-
-    if (!controller) return;
-
-    // Сначала подходим вплотную к контроллеру
-    if (creep.pos.getRangeTo(controller) > 1) {
-        creep.moveTo(controller, {
-            range: 1,
-            reusePath: 5
-        });
-
-        return;
-    }
-
-    // Только находясь на соседней клетке, улучшаем контроллер
-    creep.upgradeController(controller);
-}
-
 
 /* Очередь строителей, ожидающих энергию */
 
