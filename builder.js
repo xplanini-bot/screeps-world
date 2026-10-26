@@ -62,9 +62,26 @@ function manageSpawning(spawn, remoteRooms) {
         ).length > 0;
     });
 
-    // По прежним условиям нужен максимум один строитель
+    // Считаем строительные площадки в домашней и удалённых комнатах
+    const constructionSitesCount = roomNames.reduce(
+        (total, roomName) => {
+            const targetRoom = Game.rooms[roomName];
+
+            if (!targetRoom) return total;
+
+            return total +
+                targetRoom.find(FIND_MY_CONSTRUCTION_SITES).length;
+        },
+        0
+    );
+
+    // Определяем необходимое количество строителей
     const desiredBuilders =
-        hasContainers && hasConstructionSites ? 1 : 0;
+        !hasContainers || constructionSitesCount === 0
+            ? 0
+            : constructionSitesCount > 1
+                ? 2
+                : 1;
 
     // Считаем уже существующих и создающихся строителей
     const currentCount = creeps.filter(
