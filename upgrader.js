@@ -92,23 +92,23 @@ function manageSpawning(spawn, remoteRooms) {
         creep.memory.role === "carrier"
     );
 
-    // Определяем необходимое количество апгрейдеров
+    // Определяем необходимое количество обычных апгрейдеров
     const desiredUpgraders =
-        !hasContainers ||
-            !hasMiner ||
-            (controllerContainerExists && extensionCount > 17)
+        !hasContainers || !hasMiner
             ? 0
             : room.controller.level >= 4
-                ? 1
-                : !hasCarrier
-                    ? 1
-                    : room.controller.level >= 3 &&
-                        extensionCount >= 5 &&
-                        extensionCount < 10
+                ? extensionCount >= 20 ? 1 : 0
+                : (controllerContainerExists && extensionCount > 17)
+                    ? 0
+                    : !hasCarrier
                         ? 1
-                        : extensionCount >= 5
-                            ? 3
-                            : 1;
+                        : room.controller.level >= 3 &&
+                            extensionCount >= 5 &&
+                            extensionCount < 10
+                            ? 1
+                            : extensionCount >= 5
+                                ? 3
+                                : 1;
 
     // Проверяем текущее количество апгрейдеров
     const currentCount = creeps.filter(creep =>
