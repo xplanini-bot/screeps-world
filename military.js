@@ -60,38 +60,36 @@ module.exports = {
     // Создание бойцов
     manageSpawning: function (spawn) {
 
-        // Экстренный атакующий создаётся только при наличии врагов
-        const hostiles = spawn.room.find(FIND_HOSTILE_CREEPS);
+        // Экстренный атакующий поддерживается постоянно
+        const attackers = Object.values(Game.creeps).filter(
+            creep => creep.memory.role === this.emergencyAttacker.role
+        );
 
-        if (hostiles.length > 0) {
-            const attackers = Object.values(Game.creeps).filter(
-                creep => creep.memory.role === this.emergencyAttacker.role
+        if (
+            attackers.length < this.emergencyAttacker.desiredCount &&
+            !spawn.spawning
+        ) {
+            const name = "EmergencyAttacker_" + Game.time;
+
+            const result = spawn.spawnCreep(
+                this.emergencyAttacker.body,
+                name,
+                {
+                    memory: {
+                        role: this.emergencyAttacker.role
+                    }
+                }
             );
 
-            if (attackers.length < this.emergencyAttacker.desiredCount &&
-                !spawn.spawning) {
-
-                const name = "EmergencyAttacker_" + Game.time;
-
-                const result = spawn.spawnCreep(
-                    this.emergencyAttacker.body,
-                    name,
-                    {
-                        memory: {
-                            role: this.emergencyAttacker.role
-                        }
-                    }
+            if (result === OK) {
+                console.log(
+                    "[ВОЕННЫЙ МОДУЛЬ] Создан экстренный атакующий: " + name
                 );
-
-                if (result === OK) {
-                    console.log(
-                        "[ВОЕННЫЙ МОДУЛЬ] Создан экстренный атакующий: " + name
-                    );
-                }
-
-                return;
             }
+
+            return;
         }
+
 
         // Проверяем наличие башни в домашней комнате
         const towers = spawn.room.find(FIND_MY_STRUCTURES, {
@@ -558,7 +556,7 @@ module.exports = {
     },
 
     // Экстренный атакующий
-runEmergencyAttacker: function (creep) {
+    runEmergencyAttacker: function (creep) {
         const hostiles = creep.room.find(FIND_HOSTILE_CREEPS);
 
         // Если врагов больше нет — ждём
