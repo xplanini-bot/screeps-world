@@ -3159,7 +3159,7 @@ module.exports.loop = function () {
             advancedUpgrader.run(creep, homeRoom);
         }
         if (creep.memory.role === "emergencyAttacker") {
-            military.runEmergencyAttacker(creep);
+            military.runEmergencyAttacker(creep, spawn);
         }
         if (creep.memory.role === "attacker") {
             attacker.runAttacker(creep);

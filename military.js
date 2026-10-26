@@ -24,7 +24,7 @@ module.exports = {
     emergencyAttacker: {
         role: "emergencyAttacker",
         desiredCount: 1,
-        body: [ATTACK, MOVE]
+        body: [ATTACK, ATTACK, MOVE, MOVE]
     },
 
     // Клетки, запрещённые для движения ближнего бойца
@@ -60,15 +60,35 @@ module.exports = {
     // Создание бойцов
     manageSpawning: function (spawn) {
 
-        // Экстренный атакующий поддерживается постоянно
+        // Экстренный атакующий поддерживается постоянно,
+        // сменщика создаём за 50 тиков до смерти
         const attackers = Object.values(Game.creeps).filter(
             creep => creep.memory.role === this.emergencyAttacker.role
         );
 
-        if (
-            attackers.length < this.emergencyAttacker.desiredCount &&
-            !spawn.spawning
-        ) {
+        const desiredCount = this.emergencyAttacker.desiredCount;
+
+        // Проверяем, есть ли действующий атакующий,
+        // которому осталось 50 тиков или меньше
+        const needsReplacement = attackers.some(
+            creep =>
+                !creep.spawning &&
+                creep.ticksToLive !== undefined &&
+                creep.ticksToLive <= 50
+        );
+
+        // Если атакующих меньше нормы — создаём нового.
+        // Если старый скоро умрёт — заранее создаём сменщика.
+        // Не создаём лишних, если сменщик уже появился.
+        const shouldSpawn =
+            attackers.length < desiredCount ||
+            (
+                attackers.length === desiredCount &&
+                needsReplacement
+            );
+
+        if (shouldSpawn && !spawn.spawning) {
+
             const name = "EmergencyAttacker_" + Game.time;
 
             const result = spawn.spawnCreep(
@@ -556,22 +576,79 @@ module.exports = {
     },
 
     // Экстренный атакующий
-    runEmergencyAttacker: function (creep) {
-        const hostiles = creep.room.find(FIND_HOSTILE_CREEPS);
+    runEmergencyAttacker: function (creep, spawn) {
 
-        // Если врагов больше нет — ждём
-        if (hostiles.length === 0) return;
+        if (creep.spawning || !spawn) return;
 
-        // Ищем ближайшего врага
-        const target = creep.pos.findClosestByPath(hostiles);
+        // Проверяем ранее выбранную цель
+        let target = creep.memory.emergencyTargetId
+            ? Game.getObjectById(creep.memory.emergencyTargetId)
+            : null;
 
-        if (!target) return;
+        // Цель уничтожена или больше недоступна
+        if (creep.memory.emergencyTargetId && !target) {
+            delete creep.memory.emergencyTargetId;
+            creep.memory.emergencyReturning = true;
+        }
 
-        // Если враг рядом — атакуем
-        if (creep.attack(target) === ERR_NOT_IN_RANGE) {
-            creep.moveTo(target, {
-                visualizePathStyle: { stroke: "#ff0000" }
+        // Возвращаемся к Spawn после завершения атаки
+        if (creep.memory.emergencyReturning) {
+
+            if (
+                creep.pos.roomName !== spawn.room.name ||
+                creep.pos.getRangeTo(spawn) > 1
+            ) {
+                creep.moveTo(spawn, {
+                    range: 1,
+                    reusePath: 5
+                });
+
+                return;
+            }
+
+            // Вернулись к Spawn
+            delete creep.memory.emergencyReturning;
+            return;
+        }
+
+        // Если цели нет, ищем ближайшего противника
+        if (!target) {
+            const hostiles = creep.room.find(FIND_HOSTILE_CREEPS);
+
+            if (hostiles.length > 0) {
+                target = creep.pos.findClosestByPath(hostiles);
+
+                if (target) {
+                    creep.memory.emergencyTargetId = target.id;
+                }
+            }
+        }
+
+        // Преследуем и атакуем выбранную цель
+        if (target) {
+            const result = creep.attack(target);
+
+            if (result === ERR_NOT_IN_RANGE) {
+                creep.moveTo(target, {
+                    visualizePathStyle: { stroke: "#ff0000" },
+                    reusePath: 3
+                });
+            }
+
+            return;
+        }
+
+        // Целей нет — возвращаемся к Spawn
+        if (
+            creep.pos.roomName !== spawn.room.name ||
+            creep.pos.getRangeTo(spawn) > 1
+        ) {
+            creep.moveTo(spawn, {
+                range: 1,
+                reusePath: 5
             });
         }
     }
+
+
 };
