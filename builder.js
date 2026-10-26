@@ -358,6 +358,64 @@ module.exports = {
             return;
         }
 
+        // Если Storage уже построен, строитель больше не обслуживает рампарт
+        if (homeRoom.storage) {
+            delete creep.memory.storageRampartRepairId;
+        }
+
+        // Ищем площадку Storage только пока он не построен
+        const storageSite = homeRoom.storage
+            ? null
+            : homeRoom.find(
+                FIND_MY_CONSTRUCTION_SITES,
+                {
+                    filter: site =>
+                        site.structureType === STRUCTURE_STORAGE
+                }
+            )[0];
+
+        if (storageSite) {
+
+            // Ищем рампарт на той же клетке, что и Storage
+            const rampart = homeRoom.lookForAt(
+                LOOK_STRUCTURES,
+                storageSite.pos.x,
+                storageSite.pos.y
+            ).find(structure =>
+                structure.structureType === STRUCTURE_RAMPART &&
+                structure.my
+            );
+
+            if (rampart) {
+
+                // Запоминаем рампарт, который нужно защищать
+                creep.memory.storageRampartRepairId = rampart.id;
+
+                // Пока прочность меньше 1000, строительство не продолжаем
+                if (rampart.hits < 1000) {
+
+                    const result = creep.repair(rampart);
+
+                    if (result === ERR_NOT_IN_RANGE) {
+                        creep.moveTo(rampart, {
+                            range: 3,
+                            reusePath: 5
+                        });
+                    }
+
+                    return;
+                }
+
+            } else {
+                // Рампарт больше не существует
+                delete creep.memory.storageRampartRepairId;
+            }
+
+        } else {
+            // Площадки Storage больше нет
+            delete creep.memory.storageRampartRepairId;
+        }
+
         // Проверяем ранее выбранную строительную площадку
         let targetSite = creep.memory.buildTargetId
             ? Game.getObjectById(creep.memory.buildTargetId)
