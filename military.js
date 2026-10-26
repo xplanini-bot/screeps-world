@@ -24,7 +24,7 @@ module.exports = {
     emergencyAttacker: {
         role: "emergencyAttacker",
         desiredCount: 1,
-        body: [ATTACK, ATTACK, MOVE, MOVE]
+        body: [ATTACK, MOVE]
     },
 
     // Клетки, запрещённые для движения ближнего бойца
