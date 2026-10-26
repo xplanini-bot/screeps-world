@@ -5,8 +5,9 @@ const advancedUpgrader = require("advancedUpgrader");
 const construction = require("construction");
 //логика атакующих юнитов
 const attacker = require("attacker");
+const upgrader = require("upgrader");
 
-const DESIRED_UPGRADERS = 2;
+//const DESIRED_UPGRADERS = 2;
 //const DESIRED_BUILDERS = 1; // строитель теперь зависит от того есть ли строительная площадка
 // Количество необходимых ремонтников
 // const repairerCount = 1; теперь зависит от того есть ли что чинить (хотябы 1 контейнер)
@@ -232,19 +233,7 @@ function manageSpawning(spawn) {
         filter: structure =>
             structure.structureType === STRUCTURE_EXTENSION
     });
-    // Выбор тела Апгрейдера в зависимости от кол-ва Расширителей
 
-    let upgraderBody;
-
-    if (extensions.length >= 7) {
-        upgraderBody = UPGRADER_BODY_Version_7;
-    } else if (extensions.length >= 5) {
-        upgraderBody = UPGRADER_BODY_Version_5;
-    } else if (extensions.length >= 2) {
-        upgraderBody = UPGRADER_BODY_Version_2;
-    } else {
-        upgraderBody = UPGRADER_BODY_Version_0;
-    }
 
     // Количество необходимых строителей
 
@@ -329,35 +318,6 @@ function manageSpawning(spawn) {
         mine => mine.desiredMiners > 0 && mine.level >= 2
     );
 
-    const controllerContainerExists =
-        !!advancedUpgrader.findControllerContainer(spawn.room);
-
-    // Проверяем наличие хотя бы одного майнера
-    const hasMiner = Object.values(Game.creeps).some(
-        creep => creep.memory.role === "miner"
-    );
-    // Проверяем наличие перевозчика
-    const hasCarrierForUpgraders = Object.values(Game.creeps).some(
-        creep => creep.memory.role === "carrier"
-    );
-
-        // Условия создания апгрейдеров и их количество
-    const desiredUpgraders =
-        !hasContainers ||
-            !hasMiner ||
-            (controllerContainerExists && extensions.length > 17)
-            ? 0
-            : spawn.room.controller.level >= 4
-                ? 1
-                : !hasCarrierForUpgraders
-                    ? 1
-                    : spawn.room.controller.level >= 3 &&
-                        extensions.length >= 5 &&
-                        extensions.length < 10
-                        ? 1
-                        : extensions.length >= 5
-                            ? 3
-                            : 1;
 
     // Приоритет создания
     const roles = [
@@ -373,13 +333,7 @@ function manageSpawning(spawn) {
             prefix: "Harvester",
             body: CREEP_BODY
         },
-        {
-            role: "upgrader",
-            //desired: DESIRED_UPGRADERS,
-            desired: desiredUpgraders,
-            prefix: "Upgrader",
-            body: upgraderBody
-        },
+
         {
             role: "builder",
             desired: builderCount,
@@ -488,6 +442,7 @@ function manageSpawning(spawn) {
 
 
     for (const item of roles) {
+
         const currentCount = item.role === "harvester"
             ? countRole("harvester") + countRole("remoteHarvester")
             : countRole(item.role);
@@ -3774,6 +3729,7 @@ module.exports.loop = function () {
         attacker.manageSpawning(spawn);
         reserver.manageSpawning(spawn);
         advancedUpgrader.manageSpawning(spawn);
+        upgrader.manageSpawning(spawn, REMOTE_ROOMS);
     }
 
     assignHarvestersToMines(homeRoom);
@@ -3829,8 +3785,14 @@ module.exports.loop = function () {
             runHarvester(creep, spawn, containers, site);
         }
 
-        if (creep.memory.role === "upgrader") {
-            runUpgrader(creep, homeRoom, containers);
+        if (creep.memory.role === upgrader.role) {
+            upgrader.run(creep, homeRoom, {
+                updateWorkingState,
+                releaseEnergyReservation,
+                findEnergyContainer,
+                getReservedEnergy,
+                reserveEnergy
+            });
         }
 
         if (creep.memory.role === "builder") {
