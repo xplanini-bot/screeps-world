@@ -2332,22 +2332,106 @@ function manageStorageConstruction(room, spawn) {
         return;
     }
 
+    // Храним координаты выбранного места для Storage
+    if (!Memory.storageConstructionPlans) {
+        Memory.storageConstructionPlans = {};
+    }
+
     // Storage уже построен
     if (room.storage) {
+        delete Memory.storageConstructionPlans[room.name];
         return;
     }
 
-    // Storage уже строится
+    // Проверяем существующую площадку Storage
     const storageSites = room.find(FIND_MY_CONSTRUCTION_SITES, {
         filter: site =>
             site.structureType === STRUCTURE_STORAGE
     });
 
+    // Уже установленную старым кодом площадку не трогаем
     if (storageSites.length > 0) {
         return;
     }
 
+    // Проверяем, есть ли сохранённая позиция
+    const plannedPosition =
+        Memory.storageConstructionPlans[room.name];
+
+    if (plannedPosition) {
+        const { x, y } = plannedPosition;
+
+        const structuresAtPosition = room.lookForAt(
+            LOOK_STRUCTURES, x, y
+        );
+
+        const sitesAtPosition = room.lookForAt(
+            LOOK_CONSTRUCTION_SITES, x, y
+        );
+
+        const rampart = structuresAtPosition.find(
+            structure =>
+                structure.structureType === STRUCTURE_RAMPART &&
+                structure.my
+        );
+
+        const hasRampartSite = sitesAtPosition.some(
+            site =>
+                site.structureType === STRUCTURE_RAMPART &&
+                site.my
+        );
+
+        // Рампарт уже построен — можно ставить Storage
+        if (rampart) {
+
+            // Не размещаем Storage, пока рампарт не укреплён до 1000 hits
+            if (rampart.hits < 1000) {
+                if (Game.time % 20 === 0) {
+                    console.log(
+                        `[STORAGE] ${room.name}: ждём укрепления рампарта` +
+                        ` на (${x}, ${y}), прочность: ${rampart.hits}/1000`
+                    );
+                }
+
+                return;
+            }
+
+            const result = room.createConstructionSite(
+                x,
+                y,
+                STRUCTURE_STORAGE
+            );
+        } else if (hasRampartSite) {
+            // Рампарт строится — ждём его завершения
+            return;
+        } else {
+            // Рампарта нет — создаём его площадку заново
+            const result = room.createConstructionSite(
+                x,
+                y,
+                STRUCTURE_RAMPART
+            );
+
+            if (result === OK) {
+                console.log(
+                    `[STORAGE] ${room.name}: создана площадка рампарта ` +
+                    `на (${x}, ${y})`
+                );
+
+                return;
+            }
+
+            // Если место стало непригодным, пересчитываем позицию
+            if (result === ERR_INVALID_TARGET) {
+                delete Memory.storageConstructionPlans[room.name];
+            } else {
+                return;
+            }
+        }
+    }
+
     const terrain = room.getTerrain();
+
     const structures = room.find(FIND_STRUCTURES);
     const constructionSites = room.find(FIND_CONSTRUCTION_SITES);
 
@@ -2506,22 +2590,28 @@ function manageStorageConstruction(room, spawn) {
         return;
     }
 
-    // Создаём площадку на лучшей клетке
+    // Запоминаем выбранную клетку
+    Memory.storageConstructionPlans[room.name] = bestPosition;
+
+    // Сначала строим рампарт
     const result = room.createConstructionSite(
         bestPosition.x,
         bestPosition.y,
-        STRUCTURE_STORAGE
+        STRUCTURE_RAMPART
     );
 
     if (result === OK) {
         console.log(
-            `[STORAGE] ${room.name}: площадка создана на ` +
-            `(${bestPosition.x}, ${bestPosition.y}), ` +
-            `оценка ${bestScore.toFixed(1)}`
+            `[STORAGE] ${room.name}: создана площадка рампарта на ` +
+            `(${bestPosition.x}, ${bestPosition.y})`
         );
     } else {
+        if (result === ERR_INVALID_TARGET) {
+            delete Memory.storageConstructionPlans[room.name];
+        }
+
         console.log(
-            `[STORAGE] ${room.name}: ошибка создания площадки: ${result}`
+            `[STORAGE] ${room.name}: ошибка создания площадки рампарта: ${result}`
         );
     }
 }
