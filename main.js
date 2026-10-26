@@ -1616,9 +1616,10 @@ function runCarrier(creep, spawn, homeRoom) {
 
         // Приоритет 3: Строитель из очереди
         if (!target) {
-            const builder = builderModule.claimBuilderEnergyRequest(carrier);
+            const assignedBuilder =
+                builderModule.claimBuilderEnergyRequest(creep);
 
-            if (builder) {
+            if (assignedBuilder) {
                 runBuilderDeliveryMode(creep, homeRoom);
                 return;
             }
