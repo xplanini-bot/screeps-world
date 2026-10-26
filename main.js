@@ -8,6 +8,7 @@ const attacker = require("attacker");
 const upgrader = require("upgrader");
 const miner = require("miner");
 const builderModule = require("builder");
+const combatMiner = require("combatMiner");
 
 // Количество необходимых ремонтников
 // const repairerCount = 1; теперь зависит от того есть ли что чинить (хотябы 1 контейнер)
@@ -3058,6 +3059,7 @@ module.exports.loop = function () {
         advancedUpgrader.manageSpawning(spawn);
         upgrader.manageSpawning(spawn, REMOTE_ROOMS);
         builderModule.manageSpawning(spawn, REMOTE_ROOMS);
+        combatMiner.manageSpawning(spawn);
     }
 
     assignHarvestersToMines(homeRoom);
@@ -3161,8 +3163,14 @@ module.exports.loop = function () {
         if (creep.memory.role === "emergencyAttacker") {
             military.runEmergencyAttacker(creep, spawn);
         }
-        if (creep.memory.role === "attacker") {
-            attacker.runAttacker(creep);
+        if (creep.memory.role === attacker.role) {
+            attacker.runAttacker(creep, spawn);
+        }
+        if (creep.memory.role === attacker.healerRole) {
+            attacker.runAttackerHealer(creep, spawn);
+        }
+        if (creep.memory.role === combatMiner.role) {
+            combatMiner.run(creep);
         }
     }
 };
