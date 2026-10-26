@@ -203,7 +203,7 @@ function manageSpawning(spawn) {
             role: "repairer",
             desired: repairerCount,
             prefix: "Repairer",
-            body: builder.getBody(spawn.room)
+            body: builderModule.getBody(spawn.room)
         },
         {
             role: "towerSupport",
