@@ -1069,6 +1069,12 @@ function findEnergyContainer(
             // Работаем только с видимыми комнатами
             if (!room) continue;
 
+            // Для обычных перевозчиков находим контейнер контроллера
+            const controllerContainer =
+                creep.memory.role === "carrier"
+                    ? advancedUpgrader.findControllerContainer(room)
+                    : null;
+
             const structures = room.find(FIND_STRUCTURES, {
                 filter: structure =>
                     structure.structureType === structureType &&
@@ -1082,6 +1088,16 @@ function findEnergyContainer(
                     structure.structureType === STRUCTURE_CONTAINER &&
                     TOWER_CONTAINER_IDS.includes(structure.id) &&
                     creep.memory.role !== "towerSupport"
+                ) {
+                    continue;
+                }
+
+                // Обычные перевозчики не забирают энергию
+                // из контейнера возле контроллера
+                if (
+                    creep.memory.role === "carrier" &&
+                    controllerContainer &&
+                    structure.id === controllerContainer.id
                 ) {
                     continue;
                 }
@@ -1367,6 +1383,12 @@ function runControllerContainerDeliveryMode(creep, homeRoom) {
 
         if (!storage) return false;
 
+        // Не начинаем новую доставку, если запас меньше 20 000
+        const storageEnergy =
+            storage.store[RESOURCE_ENERGY] || 0;
+
+        if (storageEnergy < 20000) return false;
+
         const reserved = getReservedEnergy(storage.id, creep.name);
 
         const availableEnergy =
@@ -1532,6 +1554,18 @@ function runCarrier(creep, spawn, homeRoom) {
     const capacity = creep.store.getCapacity(RESOURCE_ENERGY);
     const freeCapacity = creep.store.getFreeCapacity(RESOURCE_ENERGY);
 
+    // Контейнер контроллера можно пополнять,
+    // только если в Storage не менее 20 000 энергии
+    const storageEnergy = homeRoom.storage
+        ? homeRoom.storage.store[RESOURCE_ENERGY] || 0
+        : 0;
+
+    const controllerContainer =
+        advancedUpgrader.findControllerContainer(homeRoom);
+
+    const canFillControllerContainer =
+        !!controllerContainer && storageEnergy >= 20000;
+
     const releaseReservation = () => {
         releaseEnergyReservation(creep);
     };
@@ -1645,7 +1679,7 @@ function runCarrier(creep, spawn, homeRoom) {
         if (!target && storageEnergy >= 20000) {
             const controllerContainer =
                 advancedUpgrader.findControllerContainer(homeRoom);
-                
+
             if (controllerContainer) {
                 const capacity =
                     controllerContainer.store.getCapacity(RESOURCE_ENERGY);
@@ -1842,6 +1876,23 @@ function runCarrier(creep, spawn, homeRoom) {
     // Если цель исчезла, освобождаем резерв
     if (!container) {
         releaseReservation();
+    }
+    
+    // Сбрасываем старый резерв, если это контейнер контроллера
+    if (
+        container &&
+        container.structureType === STRUCTURE_CONTAINER
+    ) {
+        const controllerContainer =
+            advancedUpgrader.findControllerContainer(container.room);
+
+        if (
+            controllerContainer &&
+            controllerContainer.id === container.id
+        ) {
+            releaseReservation();
+            container = null;
+        }
     }
 
     // Если контейнер уже выбран, продолжаем путь к нему
