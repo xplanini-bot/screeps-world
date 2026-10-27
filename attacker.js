@@ -477,7 +477,7 @@ module.exports = {
 
     // Целевая комната.
     // Пустая строка отключает создание отряда.
-    targetRoom: "E26N55",
+    targetRoom: "",
 
     // Стрелок: 10 TOUGH, 8 MOVE, 5 RANGED_ATTACK
     // TOUGH и MOVE расположены перед атакующими частями,
