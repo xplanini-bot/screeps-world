@@ -5,6 +5,125 @@ function getSquadMembers(squadId) {
     );
 }
 
+// Находим логово, которому соответствует Source Keeper
+function getKeeperLairForKeeper(keeper) {
+    const room = keeper.room;
+
+    const lairs = room.find(FIND_STRUCTURES, {
+        filter: structure =>
+            structure.structureType === STRUCTURE_KEEPER_LAIR
+    });
+
+    if (lairs.length === 0) return null;
+
+    // Source Keeper охраняет ближайший к нему ресурс
+    const resources = [
+        ...room.find(FIND_SOURCES),
+        ...room.find(FIND_MINERALS)
+    ];
+
+    const resource = keeper.pos.findClosestByRange(resources);
+
+    // Выбираем логово, ближайшее к охраняемому ресурсу
+    if (resource) {
+        return resource.pos.findClosestByRange(lairs);
+    }
+
+    // Запасной вариант
+    return keeper.pos.findClosestByRange(lairs);
+}
+
+// Выбор ведущего хиллера при отступлении
+function getRetreatLeader(members) {
+    const healers = members
+        .filter(member =>
+            member.memory.role === "attackerHealer" &&
+            !member.spawning
+        )
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+    return healers[0] || null;
+}
+
+
+// Проверяем, находятся ли хиллеры рядом со стрелком
+function areHealersCloseToAttacker(attacker, members) {
+    const healers = members.filter(member =>
+        member.memory.role === "attackerHealer" &&
+        !member.spawning
+    );
+
+    return healers.every(healer =>
+        healer.pos.roomName === attacker.pos.roomName &&
+        attacker.pos.getRangeTo(healer) <= 1
+    );
+}
+
+
+// Определяем позицию для короткого отступления
+// по маршруту в сторону домашней комнаты
+function getHomewardRetreatPosition(leader, homeRoomName, steps = 2) {
+    if (leader.pos.roomName === homeRoomName) return null;
+
+    const route = Game.map.findRoute(
+        leader.pos.roomName,
+        homeRoomName
+    );
+
+    if (!Array.isArray(route) || route.length === 0) {
+        return null;
+    }
+
+    const exits = leader.room.find(route[0].exit);
+    const exit = leader.pos.findClosestByPath(exits);
+
+    if (!exit) return null;
+
+    const path = leader.pos.findPathTo(exit, {
+        range: 0
+    });
+
+    if (!path || path.length === 0) return null;
+
+    // Элемент path[1] — вторая клетка от начальной позиции
+    const step = path[Math.min(steps - 1, path.length - 1)];
+
+    return {
+        x: step.x,
+        y: step.y,
+        roomName: leader.pos.roomName
+    };
+}
+
+
+// Проверяем, сражается ли отряд именно с Source Keeper
+function isSourceKeeperEncounter(state, members, homeRoomName) {
+    const target = state.targetId
+        ? Game.getObjectById(state.targetId)
+        : null;
+
+    if (target) {
+        return target.owner &&
+            target.owner.username === "Source Keeper" &&
+            target.pos.roomName !== homeRoomName;
+    }
+
+    // Запасная проверка, если цель ещё не записана
+    const remoteMember = members.find(member =>
+        !member.spawning &&
+        member.pos.roomName !== homeRoomName
+    );
+
+    if (!remoteMember) return false;
+
+    const hostiles = remoteMember.room.find(FIND_HOSTILE_CREEPS);
+
+    return hostiles.length > 0 &&
+        hostiles.every(hostile =>
+            hostile.owner.username === "Source Keeper"
+        );
+}
+
 // Получение общего состояния отряда
 function getSquadState(squadId) {
     if (!Memory.attackerSquads) {
@@ -14,11 +133,25 @@ function getSquadState(squadId) {
     if (!Memory.attackerSquads[squadId]) {
         Memory.attackerSquads[squadId] = {
             mode: "attack",
-            targetId: null
+            targetId: null,
+            keeperName: null,
+            waitingForKeeper: false
         };
     }
 
-    return Memory.attackerSquads[squadId];
+    const state = Memory.attackerSquads[squadId];
+
+    // Добавляем поля существующим отрядам,
+    // созданным до обновления кода
+    if (state.keeperName === undefined) {
+        state.keeperName = null;
+    }
+
+    if (state.waitingForKeeper === undefined) {
+        state.waitingForKeeper = false;
+    }
+
+    return state;
 }
 
 // Проверка здоровья и состояния отряда
@@ -27,25 +160,236 @@ function updateSquadState(creep, expectedCount, homeRoomName) {
     const members = getSquadMembers(squadId);
     const state = getSquadState(squadId);
 
-    // Если здоровье любого участника ниже 50%,
-    // переводим весь отряд в режим отступления
+    // Проверяем изменение здоровья участников один раз за тик
+    if (state.lastDamageCheckTick !== Game.time) {
+        const previousHits = state.lastMemberHits || {};
+        let damageDetected = false;
+        const currentHits = {};
+
+        for (const member of members) {
+            if (member.spawning) continue;
+
+            currentHits[member.id] = member.hits;
+
+            if (
+                Number.isFinite(previousHits[member.id]) &&
+                member.hits < previousHits[member.id]
+            ) {
+                damageDetected = true;
+            }
+        }
+
+        state.lastMemberHits = currentHits;
+        state.lastDamageCheckTick = Game.time;
+        state.damageDetectedTick = damageDetected
+            ? Game.time
+            : null;
+    }
+
+    const memberTookDamage =
+        state.damageDetectedTick === Game.time;
+
+    const attacker = members.find(member =>
+        member.memory.role === "attacker" &&
+        !member.spawning
+    );
+
+    const attackerNearEnd =
+        attacker && attacker.ticksToLive <= 50;
+
+    const injuredHealer = members.some(member =>
+        !member.spawning &&
+        member.memory.role === "attackerHealer" &&
+        member.hits < member.hitsMax * 0.5
+    );
+
+    // Стрелка с остатком жизни <= 50 тиков
+    // не учитываем при решении об отступлении по здоровью
+    const lowHealthMember = members.some(member =>
+        !member.spawning &&
+        member.hits < member.hitsMax * 0.5 &&
+        !(
+            member.memory.role === "attacker" &&
+            attackerNearEnd
+        )
+    );
+
+    const tacticalModes = ["keeperRetreat", "keeperHeal"];
+
+    // Если в коротком отступлении потеряли участника
+    // или кто-то из нового состава ещё создаётся —
+    // переходим к обычному отступлению домой
     if (
-        state.mode !== "retreat" &&
-        members.some(member =>
-            !member.spawning &&
-            member.hits < member.hitsMax * 0.5
+        tacticalModes.includes(state.mode) &&
+        (
+            members.length < expectedCount ||
+            members.some(member => member.spawning)
         )
     ) {
         state.mode = "retreat";
         state.targetId = null;
+        delete state.retreatPosition;
 
         console.log(
-            "[ОТРЯД] Отступление: здоровье участника ниже 50%"
+            "[ОТРЯД] Состав изменился. Отступаем домой."
         );
     }
 
-    // Возобновляем атаку только после возвращения
-    // всех участников домой и полного восстановления
+    // Последние 50 тиков жизни стрелка:
+    // если хиллерам не требуется срочное восстановление,
+    // возобновляем бой вместо отступления
+    if (
+        attackerNearEnd &&
+        !injuredHealer &&
+        ["retreat", "keeperRetreat", "keeperHeal"].includes(state.mode) &&
+        members.length >= expectedCount &&
+        members.every(member => !member.spawning)
+    ) {
+        state.mode = "attack";
+        state.targetId = null;
+        delete state.retreatPosition;
+
+        console.log(
+            "[ОТРЯД] Стрелку осталось не более 50 тиков. " +
+            "Продолжаем бой."
+        );
+    }
+
+    // При опасном ранении выбираем способ отступления
+    if (state.mode === "attack" && lowHealthMember) {
+        const leader = getRetreatLeader(members);
+
+        const fullSquad =
+            members.length >= expectedCount &&
+            members.every(member => !member.spawning);
+
+        const sameRoom = leader &&
+            members.every(member =>
+                member.pos.roomName === leader.pos.roomName
+            );
+
+        const sourceKeeperEncounter =
+            isSourceKeeperEncounter(state, members, homeRoomName);
+
+        const retreatPosition =
+            sourceKeeperEncounter && leader && fullSquad && sameRoom
+                ? getHomewardRetreatPosition(
+                    leader,
+                    homeRoomName,
+                    2
+                )
+                : null;
+
+        if (retreatPosition) {
+            state.mode = "keeperRetreat";
+            state.retreatPosition = retreatPosition;
+
+            console.log(
+                "[ОТРЯД] Source Keeper: короткое отступление " +
+                "на 2 клетки в сторону дома."
+            );
+        } else {
+            // Для других противников или если короткий маршрут
+            // построить не удалось — возвращаемся домой
+            state.mode = "retreat";
+            state.targetId = null;
+            delete state.retreatPosition;
+
+            console.log(
+                "[ОТРЯД] Отступление домой: здоровье участника ниже 50%."
+            );
+        }
+    }
+
+    const leader = getRetreatLeader(members);
+
+    // При получении новых повреждений во время лечения
+    // отступаем ещё на 2 клетки в сторону дома
+    if (
+        state.mode === "keeperHeal" &&
+        memberTookDamage
+    ) {
+        const leader = getRetreatLeader(members);
+
+        const retreatPosition = leader
+            ? getHomewardRetreatPosition(
+                leader,
+                homeRoomName,
+                2
+            )
+            : null;
+
+        if (leader && retreatPosition) {
+            state.mode = "keeperRetreat";
+            state.retreatPosition = retreatPosition;
+
+            console.log(
+                "[ОТРЯД] Во время лечения получены повреждения. " +
+                "Отступаем ещё на 2 клетки."
+            );
+        } else {
+            // Если короткий путь больше недоступен,
+            // используем обычное отступление домой
+            state.mode = "retreat";
+            state.targetId = null;
+            delete state.retreatPosition;
+
+            console.log(
+                "[ОТРЯД] Не удалось выбрать точку повторного отступления. " +
+                "Возвращаемся домой."
+            );
+        }
+    }
+
+    const groupedWithLeader = leader &&
+        members.length >= expectedCount &&
+        members.every(member =>
+            !member.spawning &&
+            member.pos.roomName === leader.pos.roomName &&
+            leader.pos.getRangeTo(member) <= 1
+        );
+
+    // Короткое отступление завершено:
+    // хиллер достиг точки, а отряд собрался рядом
+    if (
+        state.mode === "keeperRetreat" &&
+        leader &&
+        state.retreatPosition &&
+        leader.pos.isEqualTo(
+            new RoomPosition(
+                state.retreatPosition.x,
+                state.retreatPosition.y,
+                state.retreatPosition.roomName
+            )
+        ) &&
+        groupedWithLeader
+    ) {
+        state.mode = "keeperHeal";
+
+        console.log(
+            "[ОТРЯД] Заняли позицию. Останавливаемся на лечение."
+        );
+    }
+
+    // После полного лечения возвращаемся к атаке
+    if (
+        state.mode === "keeperHeal" &&
+        groupedWithLeader &&
+        members.every(member =>
+            member.hits >= member.hitsMax
+        )
+    ) {
+        state.mode = "attack";
+        state.targetId = null;
+        delete state.retreatPosition;
+
+        console.log(
+            "[ОТРЯД] Отряд полностью восстановлен. Возобновляем атаку."
+        );
+    }
+
+    // Обычное отступление завершается только дома,
+    // когда весь отряд восстановил здоровье
     if (
         state.mode === "retreat" &&
         members.length >= expectedCount &&
@@ -57,6 +401,7 @@ function updateSquadState(creep, expectedCount, homeRoomName) {
     ) {
         state.mode = "attack";
         state.targetId = null;
+        delete state.retreatPosition;
 
         console.log(
             "[ОТРЯД] Все участники восстановлены. Возобновляем атаку."
@@ -262,9 +607,48 @@ module.exports = {
             homeRoomName
         );
 
-        // Отступаем домой при критическом повреждении
+        // Обычное отступление: стрелок следует за ведущим хиллером
         if (state.mode === "retreat") {
-            returnToSpawn(creep, spawn);
+            const leader = getRetreatLeader(members);
+
+            if (!leader) {
+                returnToSpawn(creep, spawn);
+            } else if (
+                creep.pos.roomName !== leader.pos.roomName ||
+                creep.pos.getRangeTo(leader) > 1
+            ) {
+                creep.moveTo(leader, {
+                    range: 1,
+                    reusePath: 3
+                });
+            }
+
+            return;
+        }
+
+        // Короткое отступление и лечение:
+        // стрелок держится рядом с ведущим хиллером
+        if (
+            state.mode === "keeperRetreat" ||
+            state.mode === "keeperHeal"
+        ) {
+            const leader = getRetreatLeader(members);
+
+            if (!leader) {
+                returnToSpawn(creep, spawn);
+                return;
+            }
+
+            if (
+                creep.pos.roomName !== leader.pos.roomName ||
+                creep.pos.getRangeTo(leader) > 1
+            ) {
+                creep.moveTo(leader, {
+                    range: 1,
+                    reusePath: 3
+                });
+            }
+
             return;
         }
 
@@ -274,6 +658,11 @@ module.exports = {
             members.some(member => member.spawning)
         ) {
             returnToSpawn(creep, spawn);
+            return;
+        }
+
+        // Не продвигаемся вперёд, если хиллеры отстали
+        if (!areHealersCloseToAttacker(creep, members)) {
             return;
         }
 
@@ -289,28 +678,85 @@ module.exports = {
             return;
         }
 
-        // Ищем врагов в целевой комнате
-        const hostiles = creep.room.find(FIND_HOSTILE_CREEPS);
+        // Ищем только Source Keeper в целевой комнате
+        const hostiles = creep.room.find(FIND_HOSTILE_CREEPS, {
+            filter: hostile =>
+                hostile.owner &&
+                hostile.owner.username === "Source Keeper"
+        });
 
-        // Сохраняем текущую цель, пока она существует
-        let target = state.targetId
-            ? Game.getObjectById(state.targetId)
-            : null;
+        const previousTargetId = state.targetId;
+        let target = null;
 
-        // Если цели больше нет в этой комнате,
-        // выбираем ближайшего к стрелку противника
-        if (
-            !target ||
-            target.pos.roomName !== targetRoom ||
-            !hostiles.some(hostile => hostile.id === target.id)
-        ) {
+        // При первом обнаружении запоминаем имя хранителя
+        if (!state.keeperName) {
             target = creep.pos.findClosestByRange(hostiles);
-            state.targetId = target ? target.id : null;
+
+            if (target) {
+                state.keeperName = target.name;
+
+                console.log(
+                    "[ОТРЯД] Запомнили Source Keeper: " +
+                    state.keeperName
+                );
+            }
+        } else {
+            // Ищем только хранителя с запомненным именем
+            target = hostiles.find(
+                hostile => hostile.name === state.keeperName
+            ) || null;
         }
 
-        // В комнате пока нет врагов
-        if (!target) return;
+        // Если нужного хранителя сейчас нет — ждём
+        if (!target) {
+            if (previousTargetId) {
+                state.waitingForKeeper = true;
+            }
 
+            state.targetId = null;
+
+            if (Game.time % 25 === 0) {
+                console.log(
+                    "[ОТРЯД] Ожидаем появления Source Keeper: " +
+                    (state.keeperName || "первый хранитель")
+                );
+            }
+
+            return;
+        }
+
+        // Если появился новый объект с тем же именем,
+        // ждём полного восстановления перед атакой
+        if (
+            previousTargetId &&
+            previousTargetId !== target.id
+        ) {
+            state.waitingForKeeper = true;
+        }
+
+        state.targetId = target.id;
+
+        // После гибели хранителя не начинаем следующий бой,
+        // пока все три участника не будут полностью здоровы
+        if (state.waitingForKeeper) {
+            const fullyHealed =
+                members.length >= expectedCount &&
+                members.every(member =>
+                    !member.spawning &&
+                    member.hits >= member.hitsMax
+                );
+
+            if (!fullyHealed) {
+                return;
+            }
+
+            state.waitingForKeeper = false;
+
+            console.log(
+                "[ОТРЯД] Отряд восстановлен. Возобновляем атаку: " +
+                state.keeperName
+            );
+        }
         // Держимся на дистанции дальней атаки
         if (creep.pos.getRangeTo(target) > 3) {
             creep.moveTo(target, {
@@ -354,10 +800,102 @@ module.exports = {
         // Лечим самого повреждённого доступного участника
         healSquadMember(creep, members);
 
-        // При отступлении возвращаемся домой,
-        // продолжая лечить союзников по пути
+        // Обычное отступление:
+        // ведущий хиллер ждёт стрелка, второй идёт за ведущим
         if (state.mode === "retreat") {
-            returnToSpawn(creep, spawn);
+            const leader = getRetreatLeader(members);
+
+            const attacker = members.find(member =>
+                member.memory.role === this.role &&
+                !member.spawning
+            );
+
+            if (!leader) {
+                returnToSpawn(creep, spawn);
+                return;
+            }
+
+            if (creep.name === leader.name) {
+                // Если стрелок погиб, хиллеры возвращаются домой
+                if (!attacker) {
+                    returnToSpawn(creep, spawn);
+                    return;
+                }
+
+                // Ведущий движется домой только тогда,
+                // когда стрелок находится рядом
+                if (
+                    attacker.pos.roomName === creep.pos.roomName &&
+                    creep.pos.getRangeTo(attacker) <= 1
+                ) {
+                    returnToSpawn(creep, spawn);
+                }
+
+                return;
+            }
+
+            // Второй хиллер следует за ведущим
+            if (
+                creep.pos.roomName !== leader.pos.roomName ||
+                creep.pos.getRangeTo(leader) > 1
+            ) {
+                creep.moveTo(leader, {
+                    range: 1,
+                    reusePath: 3
+                });
+            }
+
+            return;
+        }
+
+        // Короткое отступление от Source Keeper:
+        // ведущий занимает заданную позицию и ждёт отряд
+        if (
+            state.mode === "keeperRetreat" ||
+            state.mode === "keeperHeal"
+        ) {
+            const leader = getRetreatLeader(members);
+
+            if (!leader) {
+                returnToSpawn(creep, spawn);
+                return;
+            }
+
+            if (creep.name === leader.name) {
+                // Только во время движения к точке отступления
+                if (
+                    state.mode === "keeperRetreat" &&
+                    state.retreatPosition
+                ) {
+                    const position = new RoomPosition(
+                        state.retreatPosition.x,
+                        state.retreatPosition.y,
+                        state.retreatPosition.roomName
+                    );
+
+                    if (!creep.pos.isEqualTo(position)) {
+                        creep.moveTo(position, {
+                            range: 0,
+                            reusePath: 3
+                        });
+                    }
+                }
+
+                // В режиме лечения ведущий остаётся на месте
+                return;
+            }
+
+            // Стрелок и второй хиллер следуют за ведущим
+            if (
+                creep.pos.roomName !== leader.pos.roomName ||
+                creep.pos.getRangeTo(leader) > 1
+            ) {
+                creep.moveTo(leader, {
+                    range: 1,
+                    reusePath: 3
+                });
+            }
+
             return;
         }
 
