@@ -1513,7 +1513,22 @@ module.exports = {
                 returnToSpawn(creep, spawn);
                 return;
             }
+            // Режим лечения после короткого отступления:
+            // оба хиллера подходят вплотную к стрелку
+            if (state.mode === "keeperHeal") {
+                if (
+                    creep.pos.roomName !== attacker.pos.roomName ||
+                    creep.pos.getRangeTo(attacker) > 1
+                ) {
+                    creep.moveTo(attacker, {
+                        range: 1,
+                        reusePath: 3
+                    });
+                }
 
+                return;
+            }
+            
             if (!leader) {
                 moveHealerBehindAttacker(
                     creep,
