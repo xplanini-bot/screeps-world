@@ -782,8 +782,8 @@ module.exports = {
     healerDesiredCount: 2,
 
     // Целевая комната.
-    // Пустая строка отключает создание отряда.
-    targetRoom: "",
+    // Пустая стрoка отключает создание отряда.E26N55
+    targetRoom: "E26N55",
 
     // Стрелок: 10 TOUGH, 8 MOVE, 5 RANGED_ATTACK
     // TOUGH и MOVE расположены перед атакующими частями,
