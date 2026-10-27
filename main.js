@@ -1638,10 +1638,14 @@ function runCarrier(creep, spawn, homeRoom) {
         }
 
         // Приоритет 5: контейнер возле контроллера
-        if (!target) {
+        const storageEnergy = homeRoom.storage
+            ? homeRoom.storage.store[RESOURCE_ENERGY] || 0
+            : 0;
+
+        if (!target && storageEnergy >= 20000) {
             const controllerContainer =
                 advancedUpgrader.findControllerContainer(homeRoom);
-
+                
             if (controllerContainer) {
                 const capacity =
                     controllerContainer.store.getCapacity(RESOURCE_ENERGY);
