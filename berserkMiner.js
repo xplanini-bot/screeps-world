@@ -4,9 +4,9 @@ module.exports = {
     role: "berserkMiner",
     desiredCount: 1,
 
-    targetRoom: "E26N55",
+    targetRoom: "",
 
-    // Отступаем за 20 тиков до появления хранителя
+    // Отступаем за 20 тиков до появления хранителя E26N55
     retreatBeforeSpawnTicks: 20,
 
     // Тело: 6 WORK + 6 MOVE
