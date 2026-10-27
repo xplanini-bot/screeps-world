@@ -559,14 +559,62 @@ function updateSquadState(creep, expectedCount, homeRoomName) {
         );
     }
 
-    // Обычное отступление завершается только дома,
-    // когда весь отряд восстановил здоровье
-    if (
-        state.mode === "retreat" &&
+    // Проверяем, что весь отряд вернулся домой,
+    // находится внутри комнаты и полностью собран
+    const allMembersHomeAndSafe =
         members.length >= expectedCount &&
         members.every(member =>
             !member.spawning &&
             member.pos.roomName === homeRoomName &&
+            member.pos.x > 0 &&
+            member.pos.x < 49 &&
+            member.pos.y > 0 &&
+            member.pos.y < 49
+        );
+
+    // ЭТАП 1 завершён: переходим к сбору возле стрелка
+    if (
+        state.mode === "retreat" &&
+        allMembersHomeAndSafe
+    ) {
+        state.mode = "retreatGather";
+        state.modeSinceTick = Game.time;
+        state.targetId = null;
+
+        console.log(
+            "[ОТРЯД] Все вернулись домой. Собираемся возле стрелка."
+        );
+    }
+
+    // Проверяем, собрались ли все участники рядом со стрелком
+    const regroupedNearAttacker =
+        attacker &&
+        allMembersHomeAndSafe &&
+        members.every(member =>
+            member.pos.roomName === attacker.pos.roomName &&
+            attacker.pos.getRangeTo(member) <= 1
+        );
+
+    // ЭТАП 2 завершён: начинаем восстановление
+    if (
+        state.mode === "retreatGather" &&
+        state.modeSinceTick < Game.time &&
+        regroupedNearAttacker
+    ) {
+        state.mode = "retreatHeal";
+        state.modeSinceTick = Game.time;
+
+        console.log(
+            "[ОТРЯД] Сбор завершён. Начинаем восстановление."
+        );
+    }
+
+    // ЭТАП 3 завершён: здоровье восстановлено, можно атаковать
+    if (
+        state.mode === "retreatHeal" &&
+        state.modeSinceTick < Game.time &&
+        regroupedNearAttacker &&
+        members.every(member =>
             member.hits >= member.hitsMax
         )
     ) {
@@ -575,7 +623,7 @@ function updateSquadState(creep, expectedCount, homeRoomName) {
         delete state.retreatPosition;
 
         console.log(
-            "[ОТРЯД] Все участники восстановлены. Возобновляем атаку."
+            "[ОТРЯД] Отряд полностью восстановлен. Возобновляем атаку."
         );
     }
 
@@ -687,70 +735,40 @@ function getRetreatRallyPosition(fromRoomName, homeRoomName) {
     };
 }
 
-// Возвращение к домашнему спавну через точку за границей
+// Возвращение в домашнюю комнату без подхода к спавну
 function returnToSpawn(creep, spawn) {
     if (!spawn) return;
 
-    const squadState =
-        creep.memory.squadId &&
-        Memory.attackerSquads
-            ? Memory.attackerSquads[creep.memory.squadId]
-            : null;
+    const homeRoomName = spawn.room.name;
 
-    // При обычном отступлении сначала проходим
-    // через промежуточную точку внутри следующей комнаты
-    if (
-        squadState &&
-        squadState.mode === "retreat" &&
-        !squadState.retreatRallyReached
-    ) {
-        const fromRoomName =
-            creep.memory.targetRoom || creep.room.name;
-
-        const rally = getRetreatRallyPosition(
-            fromRoomName,
-            spawn.room.name
+    // Если ещё не дома — движемся вглубь домашней комнаты
+    if (creep.pos.roomName !== homeRoomName) {
+        creep.moveTo(
+            new RoomPosition(25, 25, homeRoomName),
+            {
+                range: 23,
+                reusePath: 5
+            }
         );
 
-        if (rally) {
-            const position = new RoomPosition(
-                rally.x,
-                rally.y,
-                rally.roomName
-            );
-
-            if (!creep.pos.isEqualTo(position)) {
-                creep.moveTo(position, {
-                    range: 0,
-                    reusePath: 5
-                });
-
-                return;
-            }
-
-            // Точка пройдена — теперь можно идти к спавну
-            squadState.retreatRallyReached = true;
-
-            console.log(
-                "[ОТРЯД] Пройдена точка сбора: " +
-                rally.roomName + " " +
-                rally.x + "," + rally.y
-            );
-        } else {
-            // Если маршрут построить не удалось,
-            // не блокируем обычное возвращение
-            squadState.retreatRallyReached = true;
-        }
+        return;
     }
 
-    if (
-        creep.pos.roomName !== spawn.room.name ||
-        creep.pos.getRangeTo(spawn) > 1
-    ) {
-        creep.moveTo(spawn, {
-            range: 1,
-            reusePath: 5
-        });
+    // Дома не двигаемся, если уже отошли от границы
+    const onBorder =
+        creep.pos.x === 0 ||
+        creep.pos.x === 49 ||
+        creep.pos.y === 0 ||
+        creep.pos.y === 49;
+
+    if (onBorder) {
+        creep.moveTo(
+            new RoomPosition(25, 25, homeRoomName),
+            {
+                range: 23,
+                reusePath: 5
+            }
+        );
     }
 }
 
@@ -923,6 +941,15 @@ module.exports = {
                 });
             }
 
+            return;
+        }
+
+        // Дома стрелок ждёт, пока хиллеры соберутся
+        // и полностью восстановят здоровье
+        if (
+            state.mode === "retreatGather" ||
+            state.mode === "retreatHeal"
+        ) {
             return;
         }
 
@@ -1237,6 +1264,35 @@ module.exports = {
                 creep.pos.getRangeTo(leader) > 2
             ) {
                 creep.moveTo(leader, {
+                    range: 1,
+                    reusePath: 3
+                });
+            }
+
+            return;
+        }
+
+        // После возвращения домой хиллеры собираются возле стрелка
+        if (
+            state.mode === "retreatGather" ||
+            state.mode === "retreatHeal"
+        ) {
+            const attacker = members.find(member =>
+                member.memory.role === this.role &&
+                !member.spawning
+            );
+
+            if (!attacker) {
+                returnToSpawn(creep, spawn);
+                return;
+            }
+
+            // Стремимся подойти вплотную к стрелку
+            if (
+                creep.pos.roomName !== attacker.pos.roomName ||
+                creep.pos.getRangeTo(attacker) > 1
+            ) {
+                creep.moveTo(attacker, {
                     range: 1,
                     reusePath: 3
                 });
