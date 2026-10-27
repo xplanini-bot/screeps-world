@@ -255,6 +255,83 @@ function findStandablePosition(room, candidates) {
 }
 
 
+function findBasePair(room, firePos, originalDirection) {
+    // Восемь направлений на карте Screeps.
+    const directions = [
+        { dx: 1, dy: 0 },
+        { dx: 1, dy: 1 },
+        { dx: 0, dy: 1 },
+        { dx: -1, dy: 1 },
+        { dx: -1, dy: 0 },
+        { dx: -1, dy: -1 },
+        { dx: 0, dy: -1 },
+        { dx: 1, dy: -1 }
+    ];
+
+    const primaryIndex = directions.findIndex(
+        d =>
+            d.dx === originalDirection.dx &&
+            d.dy === originalDirection.dy
+    );
+
+    if (primaryIndex === -1) {
+        return null;
+    }
+
+    // Сначала первоначальное направление,
+    // затем два соседних направления.
+    const alternatives = [
+        directions[primaryIndex],
+        directions[(primaryIndex + 1) % 8],
+        directions[(primaryIndex + 7) % 8]
+    ];
+
+    for (const direction of alternatives) {
+        const firstCandidates = getForwardCandidates(
+            firePos,
+            direction,
+            2
+        );
+
+        // Проверяем все варианты первой базы.
+        for (const first of firstCandidates) {
+            if (!isStandable(room, first)) {
+                continue;
+            }
+
+            const firstPos = new RoomPosition(
+                first.x,
+                first.y,
+                room.name
+            );
+
+            // Вторая база должна продолжать то же направление.
+            const secondCandidates = getForwardCandidates(
+                firstPos,
+                direction,
+                2
+            );
+
+            const secondPos = findStandablePosition(
+                room,
+                secondCandidates
+            );
+
+            // Возвращаем только полноценную пару.
+            if (secondPos) {
+                return {
+                    base: firstPos,
+                    base2: secondPos,
+                    direction: direction
+                };
+            }
+        }
+    }
+
+    return null;
+}
+
+
 module.exports = {
 
     role: "attacker",
@@ -265,7 +342,7 @@ module.exports = {
 
     // Пустая строка отключает создание стрелка.
     targetRoom: "E26N55",
-    previewOnly: true,
+    previewOnly: false,
 
     // Стрелок: 10 TOUGH, 8 MOVE, 5 RANGED_ATTACK.
     body: [
@@ -426,46 +503,36 @@ module.exports = {
     },
 
 
+
     runAttacker(creep) {
         if (this.previewOnly || creep.spawning || !this.targetRoom) {
             return;
         }
 
-        if (creep.spawning || !this.targetRoom) {
-            return;
-        }
-
-        // Получаем память координат отряда.
-        if (!creep.memory.attackerPositions) {
-            creep.memory.attackerPositions = {};
-        }
-
-        const points = creep.memory.attackerPositions;
-
-        // Если целевая комната изменилась,
-        // старые координаты использовать нельзя.
-        if (points.roomName !== this.targetRoom) {
+        // У каждого стрелка собственный набор координат.
+        if (
+            !creep.memory.attackerPositions ||
+            creep.memory.attackerPositions.roomName !== this.targetRoom
+        ) {
             creep.memory.attackerPositions = {
                 roomName: this.targetRoom
             };
         }
 
-        const savedPoints = creep.memory.attackerPositions;
+        const points = creep.memory.attackerPositions;
 
-        // 1. Сразу направляем стрелка в целевую комнату.
+        // 1. Сначала отправляем стрелка в целевую комнату.
         if (creep.room.name !== this.targetRoom) {
             creep.moveTo(
                 new RoomPosition(25, 25, this.targetRoom),
                 { reusePath: 20 }
             );
-
             return;
         }
 
-
-        // 2. Находим ближайшего Source Keeper.
-        // Его первую найденную позицию сохраняем.
-        if (!savedPoints.keeper) {
+        // 2. Выбираем ближайшего к самому стрелку Source Keeper.
+        // Его исходную позицию сохраняем как опорную.
+        if (!points.keeper) {
             const keepers = creep.room.find(FIND_HOSTILE_CREEPS, {
                 filter: hostile =>
                     hostile.owner &&
@@ -475,22 +542,29 @@ module.exports = {
             const keeper = creep.pos.findClosestByRange(keepers);
 
             if (!keeper) {
+                if (!points.waitingForKeeperLogged) {
+                    console.log(
+                        "[attacker " + creep.name +
+                        "] В комнате нет видимого Source Keeper. Жду."
+                    );
+                    points.waitingForKeeperLogged = true;
+                }
                 return;
             }
 
-            savedPoints.keeper = getPositionData(keeper.pos);
+            points.keeper = getPositionData(keeper.pos);
+            points.keeperId = keeper.id;
+            points.waitingForKeeperLogged = false;
         }
 
+        const keeperPos = new RoomPosition(
+            points.keeper.x,
+            points.keeper.y,
+            points.keeper.roomName
+        );
 
-        // 3. Ищем логово, ближайшее к сохранённой
-        // позиции Source Keeper.
-        if (!savedPoints.lair) {
-            const keeperPos = new RoomPosition(
-                savedPoints.keeper.x,
-                savedPoints.keeper.y,
-                savedPoints.keeper.roomName
-            );
-
+        // 3. Находим ближайшее к выбранному Keeper логово.
+        if (!points.lair) {
             const lairs = creep.room.find(FIND_STRUCTURES, {
                 filter: structure =>
                     structure.structureType === STRUCTURE_KEEPER_LAIR
@@ -499,36 +573,32 @@ module.exports = {
             const lair = keeperPos.findClosestByRange(lairs);
 
             if (!lair) {
+                if (!points.lairErrorLogged) {
+                    console.log(
+                        "[attacker " + creep.name +
+                        "] Не найдено логово Source Keeper."
+                    );
+                    points.lairErrorLogged = true;
+                }
                 return;
             }
 
-            savedPoints.lair = getPositionData(lair.pos);
+            points.lair = getPositionData(lair.pos);
+            points.lairErrorLogged = false;
         }
 
-
-        // 4. Вычисляем направление от логова через Keeper.
-        if (!savedPoints.direction) {
-            const direction = getDirectionVector(
-                savedPoints.lair,
-                savedPoints.keeper
+        // 4. Определяем направление от логова через Keeper.
+        if (!points.direction) {
+            points.direction = getDirectionVector(
+                points.lair,
+                points.keeper
             );
-
-            savedPoints.direction = direction;
         }
 
-        const direction = savedPoints.direction;
+        const direction = points.direction;
 
-        const keeperPos = new RoomPosition(
-            savedPoints.keeper.x,
-            savedPoints.keeper.y,
-            savedPoints.keeper.roomName
-        );
-
-
-        // 5. Ищем огневую позицию в направлении
-        // от Keeper ещё на 3 клетки.
-        // Допускаем две боковые клетки.
-        if (!savedPoints.fire) {
+        // 5. Выбираем собственную огневую позицию стрелка.
+        if (!points.fire) {
             const candidates = getForwardCandidates(
                 keeperPos,
                 direction,
@@ -541,50 +611,110 @@ module.exports = {
             );
 
             if (!firePos) {
+                const details = candidates.map(point =>
+                    point.x + "," + point.y + ": " +
+                    getPositionProblem(creep.room, point)
+                ).join("; ");
+
+                if (points.lastFireError !== details) {
+                    console.log(
+                        "[attacker " + creep.name +
+                        "] Не найдена огневая позиция. " + details
+                    );
+                    points.lastFireError = details;
+                }
+
                 return;
             }
 
-            savedPoints.fire = getPositionData(firePos);
+            points.fire = getPositionData(firePos);
+            delete points.lastFireError;
         }
 
 
-        // 6. Вычисляем базу на 2 клетки дальше
-        // огневой позиции, в том же направлении.
-        if (!savedPoints.base) {
-            const firePos = new RoomPosition(
-                savedPoints.fire.x,
-                savedPoints.fire.y,
-                savedPoints.fire.roomName
+        // 6. Пересчитываем старую базу при переходе
+        // на новую версию алгоритма.
+        if (points.basePlanVersion !== 2) {
+            delete points.base;
+            delete points.base2;
+            delete points.baseDirection;
+
+            points.basePlanVersion = 2;
+            delete points.reportedPlan;
+        }
+
+        // Ищем сразу пару баз.
+        if (!points.base || !points.base2) {
+            const firePosition = new RoomPosition(
+                points.fire.x,
+                points.fire.y,
+                points.fire.roomName
             );
 
-            const candidates = getForwardCandidates(
-                firePos,
-                direction,
-                2
-            );
-
-            const basePos = findStandablePosition(
+            const pair = findBasePair(
                 creep.room,
-                candidates
+                firePosition,
+                direction
             );
 
-            if (basePos) {
-                savedPoints.base = getPositionData(basePos);
+            if (pair) {
+                points.base = getPositionData(pair.base);
+                points.base2 = getPositionData(pair.base2);
+                points.baseDirection = pair.direction;
+
+                delete points.lastBasePairError;
+            } else {
+                if (!points.lastBasePairError) {
+                    console.log(
+                        "[attacker " + creep.name +
+                        "] Не удалось найти две базы подряд. " +
+                        "Пробую поиск повторно."
+                    );
+                    points.lastBasePairError = true;
+                }
+
+                // Не отправляем стрелка на огневую позицию.
+                return;
             }
         }
 
+        // 7. Выводим лог только при изменении выбранного плана.
 
-        // 7. Пока только занимаем огневую позицию.
-        // Стрелять и отступать будем на следующем этапе.
-        const firePos = new RoomPosition(
-            savedPoints.fire.x,
-            savedPoints.fire.y,
-            savedPoints.fire.roomName
+        const report = [
+            "Keeper: " + points.keeper.x + "," + points.keeper.y,
+            "логово: " + points.lair.x + "," + points.lair.y,
+            "огневая позиция: " +
+            points.fire.x + "," + points.fire.y,
+            "база 1: " +
+            points.base.x + "," + points.base.y,
+            "база 2: " +
+            points.base2.x + "," + points.base2.y,
+            "направление баз: dx=" +
+            points.baseDirection.dx +
+            ", dy=" + points.baseDirection.dy
+        ].join(" | ");
+
+        if (points.reportedPlan !== report) {
+            console.log(
+                "[attacker " + creep.name + "] " + report
+            );
+            points.reportedPlan = report;
+        }
+
+
+
+        // 8. Пока занимаем первую базу, а не огневую позицию.
+        const basePos = new RoomPosition(
+            points.base.x,
+            points.base.y,
+            points.base.roomName
         );
 
-        if (!creep.pos.isEqualTo(firePos)) {
-            creep.moveTo(firePos, { reusePath: 20 });
+        if (!creep.pos.isEqualTo(basePos)) {
+            creep.moveTo(basePos, { reusePath: 20 });
         }
-    }
+
+    },
+
 
 };
