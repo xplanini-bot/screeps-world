@@ -18,7 +18,20 @@ module.exports = {
         MOVE, MOVE, MOVE
     ],
 
-    // Создание шахтёра для логова, известного боевому отряду
+    // Роль и количество перевозчиков
+    carrierRole: "berserkCarrier",
+    carrierDesiredCount: 1,
+
+    // Тело перевозчика: 10 CARRY + 10 MOVE
+    carrierBody: [
+        CARRY, CARRY, CARRY, CARRY, CARRY,
+        CARRY, CARRY, CARRY, CARRY, CARRY,
+
+        MOVE, MOVE, MOVE, MOVE, MOVE,
+        MOVE, MOVE, MOVE, MOVE, MOVE
+    ],
+
+    // Создание шахтёра и следующего за ним перевозчика
     manageSpawning: function (spawn) {
         if (!this.targetRoom || spawn.spawning) return;
 
@@ -28,49 +41,94 @@ module.exports = {
             Memory.attackerSquads &&
             Memory.attackerSquads[squadId];
 
-        // Не создаём шахтёра, пока отряд не выбрал логово
+        // Ждём, пока боевой отряд определит логово
         if (!squadState || !squadState.keeperLairId) {
             return;
         }
 
-        const existing = Object.values(Game.creeps).some(creep =>
+        const creeps = Object.values(Game.creeps);
+
+        const miner = creeps.find(creep =>
             creep.memory.role === this.role &&
-            creep.memory.targetRoom === this.targetRoom
+            creep.memory.targetRoom === this.targetRoom &&
+            creep.memory.squadId === squadId
         );
 
-        if (existing) return;
+        // Этап 1: создаём шахтёра
+        if (!miner) {
+            const cost = this.body.reduce(
+                (total, part) => total + BODYPART_COST[part],
+                0
+            );
 
-        const cost = this.body.reduce(
+            if (spawn.room.energyAvailable < cost) return;
+
+            const name = "BerserkMiner_" + Game.time;
+
+            const result = spawn.spawnCreep(
+                this.body,
+                name,
+                {
+                    memory: {
+                        role: this.role,
+                        targetRoom: this.targetRoom,
+                        homeRoomName: spawn.room.name,
+                        squadId: squadId,
+                        keeperLairId: squadState.keeperLairId,
+                        sourceId: null,
+                        minePosition: null,
+                        retreating: false,
+                        retreatPosition: null
+                    }
+                }
+            );
+
+            if (result === OK) {
+                console.log(
+                    "[БЕШЕНЫЙ ШАХТЁР] Создан: " + name
+                );
+            }
+
+            return;
+        }
+
+        // Этап 2: перевозчик создаётся только после шахтёра
+        // и при наличии домашнего Storage
+        if (!spawn.room.storage) return;
+
+        const carrierExists = creeps.some(creep =>
+            creep.memory.role === this.carrierRole &&
+            creep.memory.squadId === squadId
+        );
+
+        if (carrierExists) return;
+
+        const cost = this.carrierBody.reduce(
             (total, part) => total + BODYPART_COST[part],
             0
         );
 
         if (spawn.room.energyAvailable < cost) return;
 
-        const name = "BerserkMiner_" + Game.time;
+        const name = "BerserkCarrier_" + Game.time;
 
         const result = spawn.spawnCreep(
-            this.body,
+            this.carrierBody,
             name,
             {
                 memory: {
-                    role: this.role,
+                    role: this.carrierRole,
                     targetRoom: this.targetRoom,
                     homeRoomName: spawn.room.name,
                     squadId: squadId,
-                    keeperLairId: squadState.keeperLairId,
-                    sourceId: null,
-                    minePosition: null,
-                    retreating: false,
-                    retreatPosition: null
+                    returningToStorage: false
                 }
             }
         );
 
         if (result === OK) {
             console.log(
-                "[БЕШЕНЫЙ ШАХТЁР] Создан: " + name +
-                ", логово: " + squadState.keeperLairId
+                "[БЕШЕНЫЙ ШАХТЁР] Создан перевозчик: " + name
             );
         }
     },
@@ -140,6 +198,141 @@ module.exports = {
             creep.pos.findClosestByPath(candidates) ||
             creep.pos.findClosestByRange(candidates)
         );
+    },
+
+    // Поведение перевозчика бешеного шахтёра
+    runCarrier: function (creep) {
+        if (creep.spawning) return;
+
+        const homeRoomName = creep.memory.homeRoomName;
+        const squadId = creep.memory.squadId;
+
+        if (!homeRoomName || !squadId) return;
+
+        const homeRoom = Game.rooms[homeRoomName];
+        const storage = homeRoom && homeRoom.storage;
+
+        const energy = creep.store[RESOURCE_ENERGY] || 0;
+
+        // Находим своего шахтёра
+        const miner = Object.values(Game.creeps).find(other =>
+            other.memory.role === this.role &&
+            other.memory.squadId === squadId &&
+            !other.spawning
+        );
+
+        // Если шахтёр отступает или погиб,
+        // перевозчик доставляет весь имеющийся груз в Storage
+        if (
+            energy > 0 &&
+            (
+                !miner ||
+                miner.memory.retreating
+            )
+        ) {
+            creep.memory.returningToStorage = true;
+        }
+
+        // После полной выгрузки начинаем следовать за шахтёром
+        if (
+            creep.memory.returningToStorage &&
+            energy === 0
+        ) {
+            creep.memory.returningToStorage = false;
+        }
+
+        // Полный перевозчик отправляется в Storage
+        if (creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+            creep.memory.returningToStorage = true;
+        }
+
+        // Режим доставки
+        if (creep.memory.returningToStorage) {
+            // Если Storage недоступен, возвращаемся домой
+            if (!storage) {
+                if (creep.room.name !== homeRoomName) {
+                    creep.moveTo(
+                        new RoomPosition(25, 25, homeRoomName),
+                        { range: 20, reusePath: 10 }
+                    );
+                }
+
+                return;
+            }
+
+            // Идём к Storage
+            if (!creep.pos.isNearTo(storage)) {
+                creep.moveTo(storage, {
+                    range: 1,
+                    reusePath: 10
+                });
+
+                return;
+            }
+
+            // Выгружаем всю энергию
+            if (energy > 0) {
+                const result = creep.transfer(
+                    storage,
+                    RESOURCE_ENERGY
+                );
+
+                if (result === ERR_NOT_IN_RANGE) {
+                    creep.moveTo(storage, {
+                        range: 1,
+                        reusePath: 10
+                    });
+                }
+            }
+
+            return;
+        }
+
+        // Если шахтёр пока отсутствует, ждём дома
+        if (!miner) {
+            if (creep.room.name !== homeRoomName) {
+                creep.moveTo(
+                    new RoomPosition(25, 25, homeRoomName),
+                    { range: 20, reusePath: 10 }
+                );
+            }
+
+            return;
+        }
+
+        // Ищем выпавшую энергию именно на клетке шахтёра
+        const droppedEnergy = miner.pos
+            .lookFor(LOOK_RESOURCES)
+            .filter(resource =>
+                resource.resourceType === RESOURCE_ENERGY &&
+                resource.amount > 0
+            )
+            .sort((a, b) => b.amount - a.amount)[0];
+
+        if (droppedEnergy) {
+            const result = creep.pickup(droppedEnergy);
+
+            if (result === ERR_NOT_IN_RANGE) {
+                creep.moveTo(droppedEnergy, {
+                    range: 1,
+                    reusePath: 3
+                });
+            }
+
+            return;
+        }
+
+        // Энергии на клетке шахтёра пока нет —
+        // держимся рядом с ним
+        if (
+            creep.pos.roomName !== miner.pos.roomName ||
+            creep.pos.getRangeTo(miner) > 1
+        ) {
+            creep.moveTo(miner, {
+                range: 1,
+                reusePath: 3
+            });
+        }
     },
 
     // Основная логика бешеного шахтёра

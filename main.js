@@ -3230,8 +3230,11 @@ module.exports.loop = function () {
         //if (creep.memory.role === combatMiner.role) {
         //    combatMiner.run(creep);
         //}
-        if (creep.memory.role === berserkMiner.role) {
+        if (creep.memory.role === "berserkMiner") {
             berserkMiner.run(creep);
+        }
+        if (creep.memory.role === "berserkCarrier") {
+            berserkMiner.runCarrier(creep);
         }
     }
 };
