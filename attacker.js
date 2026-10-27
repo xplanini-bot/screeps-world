@@ -216,38 +216,142 @@ function moveHealerBehindAttacker(creep, attacker, target, members) {
     }
 }
 
-// Определяем позицию для короткого отступления
-// по маршруту в сторону домашней комнаты
-function getHomewardRetreatPosition(leader, homeRoomName, steps = 2) {
-    if (leader.pos.roomName === homeRoomName) return null;
+// Выбираем позицию для отступления от Source Keeper
+function getAwayFromSourceKeeperPosition(leader, state, steps = 2) {
+    if (!leader) return null;
 
-    const route = Game.map.findRoute(
-        leader.pos.roomName,
-        homeRoomName
-    );
+    // Сначала используем текущую цель отряда
+    let keeper = state.targetId
+        ? Game.getObjectById(state.targetId)
+        : null;
 
-    if (!Array.isArray(route) || route.length === 0) {
-        return null;
+    // Если текущая цель недоступна, ищем ближайшего
+    // Source Keeper в комнате ведущего хиллера
+    if (
+        !keeper ||
+        keeper.pos.roomName !== leader.pos.roomName ||
+        !keeper.owner ||
+        keeper.owner.username !== "Source Keeper"
+    ) {
+        const keepers = leader.room.find(FIND_HOSTILE_CREEPS, {
+            filter: hostile =>
+                hostile.owner &&
+                hostile.owner.username === "Source Keeper"
+        });
+
+        keeper = leader.pos.findClosestByRange(keepers);
     }
 
-    const exits = leader.room.find(route[0].exit);
-    const exit = leader.pos.findClosestByPath(exits);
+    // Если хранитель не найден, короткое отступление невозможно
+    if (!keeper) return null;
 
-    if (!exit) return null;
+    // Определяем направление ОТ хранителя
+    const dx = Math.sign(leader.pos.x - keeper.pos.x);
+    const dy = Math.sign(leader.pos.y - keeper.pos.y);
 
-    const path = leader.pos.findPathTo(exit, {
-        range: 0
-    });
+    if (dx === 0 && dy === 0) return null;
 
-    if (!path || path.length === 0) return null;
+    // Желаемая позиция на две клетки дальше от хранителя
+    const desiredX = Math.max(
+        1,
+        Math.min(48, leader.pos.x + dx * steps)
+    );
 
-    // Элемент path[1] — вторая клетка от начальной позиции
-    const step = path[Math.min(steps - 1, path.length - 1)];
+    const desiredY = Math.max(
+        1,
+        Math.min(48, leader.pos.y + dy * steps)
+    );
+
+    const candidates = [];
+    const room = leader.room;
+    const currentRange = leader.pos.getRangeTo(keeper);
+
+    // Ищем запасные позиции рядом с желаемой точкой
+    for (
+        let x = Math.max(1, desiredX - 1);
+        x <= Math.min(48, desiredX + 1);
+        x++
+    ) {
+        for (
+            let y = Math.max(1, desiredY - 1);
+            y <= Math.min(48, desiredY + 1);
+            y++
+        ) {
+            if (
+                room.getTerrain().get(x, y) === TERRAIN_MASK_WALL
+            ) {
+                continue;
+            }
+
+            const pos = new RoomPosition(x, y, room.name);
+
+            // Не выбираем непроходимые клетки
+            const structures = pos.lookFor(LOOK_STRUCTURES);
+
+            const blocked = structures.some(structure =>
+                structure.structureType !== STRUCTURE_ROAD &&
+                structure.structureType !== STRUCTURE_CONTAINER &&
+                structure.structureType !== STRUCTURE_RAMPART &&
+                OBSTACLE_OBJECT_TYPES.includes(
+                    structure.structureType
+                )
+            );
+
+            if (blocked) continue;
+
+            // Не выбираем клетку, занятую другим крипом
+            const occupied = pos.lookFor(LOOK_CREEPS).some(other =>
+                other.id !== leader.id
+            );
+
+            if (occupied) continue;
+
+            // Проверяем, что позиция действительно дальше от хранителя
+            const enemyRange = pos.getRangeTo(keeper);
+
+            if (enemyRange <= currentRange) continue;
+
+            // Проверяем возможность добраться до позиции
+            const path = leader.pos.findPathTo(pos, {
+                range: 0,
+                maxOps: 1000
+            });
+
+            if (path.length === 0) continue;
+
+            // Оценка того, насколько позиция направлена
+            // в сторону, противоположную хранителю
+            const projection =
+                (x - leader.pos.x) * dx +
+                (y - leader.pos.y) * dy;
+
+            candidates.push({
+                x,
+                y,
+                roomName: room.name,
+                enemyRange,
+                projection,
+                pathLength: path.length
+            });
+        }
+    }
+
+    // Предпочитаем позицию дальше от хранителя,
+    // затем направление от него, затем короткий путь
+    candidates.sort((a, b) =>
+        (b.enemyRange - a.enemyRange) ||
+        (b.projection - a.projection) ||
+        (a.pathLength - b.pathLength)
+    );
+
+    if (candidates.length === 0) return null;
+
+    const destination = candidates[0];
 
     return {
-        x: step.x,
-        y: step.y,
-        roomName: leader.pos.roomName
+        x: destination.x,
+        y: destination.y,
+        roomName: destination.roomName
     };
 }
 
@@ -430,9 +534,9 @@ function updateSquadState(creep, expectedCount, homeRoomName) {
 
         const retreatPosition =
             sourceKeeperEncounter && leader && fullSquad && sameRoom
-                ? getHomewardRetreatPosition(
+                ? getAwayFromSourceKeeperPosition(
                     leader,
-                    homeRoomName,
+                    state,
                     2
                 )
                 : null;
@@ -470,9 +574,9 @@ function updateSquadState(creep, expectedCount, homeRoomName) {
         const leader = getRetreatLeader(members);
 
         const retreatPosition = leader
-            ? getHomewardRetreatPosition(
+            ? getAwayFromSourceKeeperPosition(
                 leader,
-                homeRoomName,
+                state,
                 2
             )
             : null;
@@ -1151,9 +1255,9 @@ module.exports = {
 
             const retreatPosition =
                 leader && fullSquad && sameRoom
-                    ? getHomewardRetreatPosition(
+                    ? getAwayFromSourceKeeperPosition(
                         leader,
-                        homeRoomName,
+                        state,
                         2
                     )
                     : null;
