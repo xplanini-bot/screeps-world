@@ -651,6 +651,35 @@ module.exports = {
 
             return;
         }
+        
+        // После пересечения границы атакующей комнаты
+        // стрелок сначала делает шаг внутрь, не ожидая хиллеров
+        if (
+            creep.room.name === targetRoom &&
+            (
+                creep.pos.x === 0 ||
+                creep.pos.x === 49 ||
+                creep.pos.y === 0 ||
+                creep.pos.y === 49
+            )
+        ) {
+            // Координаты первой клетки внутри комнаты
+            const x = Math.max(1, Math.min(48, creep.pos.x));
+            const y = Math.max(1, Math.min(48, creep.pos.y));
+
+            const innerPosition = new RoomPosition(
+                x,
+                y,
+                targetRoom
+            );
+
+            creep.moveTo(innerPosition, {
+                range: 0,
+                reusePath: 0
+            });
+
+            return;
+        }
 
         // Не отправляем отряд в бой, пока он не собран полностью
         if (
