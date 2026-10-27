@@ -3224,9 +3224,9 @@ module.exports.loop = function () {
         if (creep.memory.role === attacker.role) {
             attacker.runAttacker(creep, spawn);
         }
-        if (creep.memory.role === attacker.healerRole) {
-            attacker.runAttackerHealer(creep, spawn);
-        }
+        //if (creep.memory.role === attacker.healerRole) {
+        //    attacker.runAttackerHealer(creep, spawn);
+        //}
         //if (creep.memory.role === combatMiner.role) {
         //    combatMiner.run(creep);
         //}
