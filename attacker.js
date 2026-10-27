@@ -383,6 +383,7 @@ function updateSquadState(creep, expectedCount, homeRoomName) {
         )
     ) {
         state.mode = "retreat";
+        state.retreatRallyReached = false;
         state.targetId = null;
         delete state.retreatPosition;
 
@@ -448,6 +449,7 @@ function updateSquadState(creep, expectedCount, homeRoomName) {
             // Для других противников или если короткий маршрут
             // построить не удалось — возвращаемся домой
             state.mode = "retreat";
+            state.retreatRallyReached = false;
             state.targetId = null;
             delete state.retreatPosition;
 
@@ -487,6 +489,7 @@ function updateSquadState(creep, expectedCount, homeRoomName) {
             // Если короткий путь больше недоступен,
             // используем обычное отступление домой
             state.mode = "retreat";
+            state.retreatRallyReached = false;
             state.targetId = null;
             delete state.retreatPosition;
 
@@ -607,9 +610,138 @@ function healSquadMember(creep, members) {
     }
 }
 
-// Возвращение к домашнему спавну
+// Точка маршрута на одну клетку за границей комнаты
+function getRetreatRallyPosition(fromRoomName, homeRoomName) {
+    const route = Game.map.findRoute(
+        fromRoomName,
+        homeRoomName
+    );
+
+    if (!Array.isArray(route) || route.length === 0) {
+        return null;
+    }
+
+    const nextRoomName = route[0].room;
+    const exit = route[0].exit;
+    const terrain = Game.map.getRoomTerrain(nextRoomName);
+    const visibleRoom = Game.rooms[nextRoomName];
+
+    const candidates = [];
+
+    // Выбираем ряд на одну клетку внутри следующей комнаты
+    if (exit === FIND_EXIT_TOP || exit === FIND_EXIT_BOTTOM) {
+        const y = exit === FIND_EXIT_TOP ? 48 : 1;
+
+        for (let x = 1; x <= 48; x++) {
+            candidates.push({ x, y });
+        }
+    } else if (
+        exit === FIND_EXIT_LEFT ||
+        exit === FIND_EXIT_RIGHT
+    ) {
+        const x = exit === FIND_EXIT_LEFT ? 48 : 1;
+
+        for (let y = 1; y <= 48; y++) {
+            candidates.push({ x, y });
+        }
+    } else {
+        return null;
+    }
+
+    // Учитываем стены и, если комната видна, препятствующие постройки
+    const available = candidates.filter(pos => {
+        if (terrain.get(pos.x, pos.y) === TERRAIN_MASK_WALL) {
+            return false;
+        }
+
+        if (visibleRoom) {
+            const structures = visibleRoom.lookForAt(
+                LOOK_STRUCTURES,
+                pos.x,
+                pos.y
+            );
+
+            if (structures.some(structure =>
+                OBSTACLE_OBJECT_TYPES.includes(
+                    structure.structureType
+                )
+            )) {
+                return false;
+            }
+        }
+
+        return true;
+    });
+
+    // Выбираем ближайшую к середине комнаты свободную клетку
+    available.sort((a, b) =>
+        (Math.abs(a.x - 25) + Math.abs(a.y - 25)) -
+        (Math.abs(b.x - 25) + Math.abs(b.y - 25))
+    );
+
+    if (available.length === 0) return null;
+
+    return {
+        ...available[0],
+        roomName: nextRoomName
+    };
+}
+
+// Возвращение к домашнему спавну через точку за границей
 function returnToSpawn(creep, spawn) {
     if (!spawn) return;
+
+    const squadState =
+        creep.memory.squadId &&
+        Memory.attackerSquads
+            ? Memory.attackerSquads[creep.memory.squadId]
+            : null;
+
+    // При обычном отступлении сначала проходим
+    // через промежуточную точку внутри следующей комнаты
+    if (
+        squadState &&
+        squadState.mode === "retreat" &&
+        !squadState.retreatRallyReached
+    ) {
+        const fromRoomName =
+            creep.memory.targetRoom || creep.room.name;
+
+        const rally = getRetreatRallyPosition(
+            fromRoomName,
+            spawn.room.name
+        );
+
+        if (rally) {
+            const position = new RoomPosition(
+                rally.x,
+                rally.y,
+                rally.roomName
+            );
+
+            if (!creep.pos.isEqualTo(position)) {
+                creep.moveTo(position, {
+                    range: 0,
+                    reusePath: 5
+                });
+
+                return;
+            }
+
+            // Точка пройдена — теперь можно идти к спавну
+            squadState.retreatRallyReached = true;
+
+            console.log(
+                "[ОТРЯД] Пройдена точка сбора: " +
+                rally.roomName + " " +
+                rally.x + "," + rally.y
+            );
+        } else {
+            // Если маршрут построить не удалось,
+            // не блокируем обычное возвращение
+            squadState.retreatRallyReached = true;
+        }
+    }
 
     if (
         creep.pos.roomName !== spawn.room.name ||
@@ -1009,6 +1141,7 @@ module.exports = {
                 );
             } else {
                 state.mode = "retreat";
+                state.retreatRallyReached = false;
                 state.targetId = null;
                 delete state.retreatPosition;
 
