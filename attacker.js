@@ -59,6 +59,162 @@ function areHealersCloseToAttacker(attacker, members) {
     );
 }
 
+// Располагаем хиллера с безопасной стороны стрелка
+function moveHealerBehindAttacker(creep, attacker, target, members) {
+    if (!attacker) return;
+
+    // Если стрелок в другой комнате, сначала догоняем его
+    if (creep.pos.roomName !== attacker.pos.roomName) {
+        creep.moveTo(attacker, {
+            range: 1,
+            reusePath: 3
+        });
+        return;
+    }
+
+    const healers = members
+        .filter(member =>
+            member.memory.role === "attackerHealer" &&
+            !member.spawning
+        )
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+    const healerIndex = healers.findIndex(
+        healer => healer.name === creep.name
+    );
+
+    if (healerIndex < 0) return;
+
+    const targetInRoom = target &&
+        target.pos.roomName === attacker.pos.roomName;
+
+    let awayX = 0;
+    let awayY = 0;
+
+    // Если хранитель виден, выбираем сторону от него
+    if (targetInRoom) {
+        awayX = Math.sign(attacker.pos.x - target.pos.x);
+        awayY = Math.sign(attacker.pos.y - target.pos.y);
+    } else {
+        // Если цель временно не видна, ориентируемся на дом
+        const homeRoomName =
+            creep.memory.homeRoomName ||
+            attacker.memory.homeRoomName;
+
+        const route = homeRoomName
+            ? Game.map.findRoute(attacker.room.name, homeRoomName)
+            : null;
+
+        if (Array.isArray(route) && route.length > 0) {
+            const exits = attacker.room.find(route[0].exit);
+            const exit = attacker.pos.findClosestByRange(exits);
+
+            if (exit) {
+                awayX = Math.sign(exit.x - attacker.pos.x);
+                awayY = Math.sign(exit.y - attacker.pos.y);
+            }
+        }
+    }
+
+    const directions = [
+        { dx: -1, dy: -1 },
+        { dx: 0, dy: -1 },
+        { dx: 1, dy: -1 },
+        { dx: 1, dy: 0 },
+        { dx: 1, dy: 1 },
+        { dx: 0, dy: 1 },
+        { dx: -1, dy: 1 },
+        { dx: -1, dy: 0 }
+    ];
+
+    const candidates = [];
+
+    for (const direction of directions) {
+        const x = attacker.pos.x + direction.dx;
+        const y = attacker.pos.y + direction.dy;
+
+        // Не занимаем клетки на границе комнаты
+        if (x < 1 || x > 48 || y < 1 || y > 48) {
+            continue;
+        }
+
+        if (
+            attacker.room.getTerrain().get(x, y) ===
+            TERRAIN_MASK_WALL
+        ) {
+            continue;
+        }
+
+        const pos = new RoomPosition(
+            x,
+            y,
+            attacker.room.name
+        );
+
+        const structures = pos.lookFor(LOOK_STRUCTURES);
+
+        const blocked = structures.some(structure =>
+            structure.structureType !== STRUCTURE_ROAD &&
+            structure.structureType !== STRUCTURE_CONTAINER &&
+            structure.structureType !== STRUCTURE_RAMPART &&
+            OBSTACLE_OBJECT_TYPES.includes(
+                structure.structureType
+            )
+        );
+
+        if (blocked) continue;
+
+        // Не выбираем клетку, занятую чужим крипом
+        const occupiedByOtherSquad = pos
+            .lookFor(LOOK_CREEPS)
+            .some(other =>
+                other.id !== creep.id &&
+                other.id !== attacker.id &&
+                !members.some(member => member.id === other.id)
+            );
+
+        if (occupiedByOtherSquad) continue;
+
+        candidates.push({
+            pos,
+            enemyRange: targetInRoom
+                ? pos.getRangeTo(target)
+                : 0,
+            alignment:
+                direction.dx * awayX +
+                direction.dy * awayY
+        });
+    }
+
+    // Сначала выбираем клетки дальше от хранителя,
+    // затем — лучше расположенные за стрелком
+    candidates.sort((a, b) =>
+        (b.enemyRange - a.enemyRange) ||
+        (b.alignment - a.alignment)
+    );
+
+    const destination = candidates[healerIndex];
+
+    if (!destination) return;
+
+    // Если второй участник отряда ещё занимает эту клетку,
+    // ждём, пока он освободит её
+    const occupiedBySquadMember = destination.pos
+        .lookFor(LOOK_CREEPS)
+        .some(other =>
+            other.id !== creep.id &&
+            members.some(member => member.id === other.id)
+        );
+
+    if (occupiedBySquadMember) return;
+
+    if (!creep.pos.isEqualTo(destination.pos)) {
+        creep.moveTo(destination.pos, {
+            range: 0,
+            reusePath: 3
+        });
+    }
+}
 
 // Определяем позицию для короткого отступления
 // по маршруту в сторону домашней комнаты
@@ -802,6 +958,69 @@ module.exports = {
                 state.keeperName
             );
         }
+
+        // Если Source Keeper подошёл слишком близко,
+        // отступаем на 2 клетки в сторону дома
+        const keeperDistance = creep.pos.getRangeTo(target);
+
+        const attackerNearEnd =
+            Number.isFinite(creep.ticksToLive) &&
+            creep.ticksToLive <= 50;
+
+        const injuredHealer = members.some(member =>
+            !member.spawning &&
+            member.memory.role === "attackerHealer" &&
+            member.hits < member.hitsMax * 0.5
+        );
+
+        if (
+            target.owner &&
+            target.owner.username === "Source Keeper" &&
+            keeperDistance <= 2 &&
+            !(attackerNearEnd && !injuredHealer)
+        ) {
+            const leader = getRetreatLeader(members);
+
+            const fullSquad =
+                members.length >= expectedCount &&
+                members.every(member => !member.spawning);
+
+            const sameRoom = leader &&
+                members.every(member =>
+                    member.pos.roomName === leader.pos.roomName
+                );
+
+            const retreatPosition =
+                leader && fullSquad && sameRoom
+                    ? getHomewardRetreatPosition(
+                        leader,
+                        homeRoomName,
+                        2
+                    )
+                    : null;
+
+            if (retreatPosition) {
+                state.mode = "keeperRetreat";
+                state.retreatPosition = retreatPosition;
+
+                console.log(
+                    "[ОТРЯД] Source Keeper приблизился на 2 клетки. " +
+                    "Отступаем."
+                );
+            } else {
+                state.mode = "retreat";
+                state.targetId = null;
+                delete state.retreatPosition;
+
+                console.log(
+                    "[ОТРЯД] Нет безопасной точки короткого отхода. " +
+                    "Возвращаемся домой."
+                );
+            }
+
+            return;
+        }
+
         // Держимся на дистанции дальней атаки
         if (creep.pos.getRangeTo(target) > 3) {
             creep.moveTo(target, {
@@ -900,39 +1119,36 @@ module.exports = {
         ) {
             const leader = getRetreatLeader(members);
 
-            if (!leader) {
+            const attacker = members.find(member =>
+                member.memory.role === this.role &&
+                !member.spawning
+            );
+
+            const target = state.targetId
+                ? Game.getObjectById(state.targetId)
+                : null;
+
+            if (!attacker) {
                 returnToSpawn(creep, spawn);
                 return;
             }
 
-            // В режиме лечения оба хиллера подходят к стрелку
-            if (state.mode === "keeperHeal") {
-                const attacker = members.find(member =>
-                    member.memory.role === this.role &&
-                    !member.spawning
+            if (!leader) {
+                moveHealerBehindAttacker(
+                    creep,
+                    attacker,
+                    target,
+                    members
                 );
-
-                if (!attacker) {
-                    returnToSpawn(creep, spawn);
-                    return;
-                }
-
-                if (
-                    creep.pos.roomName !== attacker.pos.roomName ||
-                    creep.pos.getRangeTo(attacker) > 1
-                ) {
-                    creep.moveTo(attacker, {
-                        range: 1,
-                        reusePath: 3
-                    });
-                }
-
                 return;
             }
 
-            // Во время отступления ведущий хиллер идёт
-            // к выбранной безопасной позиции
-            if (creep.name === leader.name) {
+            // При коротком отступлении ведущий хиллер
+            // идёт к безопасной точке в сторону дома
+            if (
+                state.mode === "keeperRetreat" &&
+                creep.name === leader.name
+            ) {
                 if (state.retreatPosition) {
                     const position = new RoomPosition(
                         state.retreatPosition.x,
@@ -951,16 +1167,14 @@ module.exports = {
                 return;
             }
 
-            // Второй хиллер следует за ведущим
-            if (
-                creep.pos.roomName !== leader.pos.roomName ||
-                creep.pos.getRangeTo(leader) > 1
-            ) {
-                creep.moveTo(leader, {
-                    range: 1,
-                    reusePath: 3
-                });
-            }
+            // Второй хиллер при отступлении и оба хиллера
+            // при лечении занимают задние позиции у стрелка
+            moveHealerBehindAttacker(
+                creep,
+                attacker,
+                target,
+                members
+            );
 
             return;
         }
@@ -984,103 +1198,17 @@ module.exports = {
             return;
         }
 
-        // Движемся вместе со стрелком.
-        // Во время марша держимся на расстоянии одной клетки.
+        // Держимся за стрелком и выбираем заднюю позицию
         const stateTarget = state.targetId
             ? Game.getObjectById(state.targetId)
             : null;
 
-        if (
-            attacker.room.name !== creep.room.name ||
-            !stateTarget ||
-            stateTarget.pos.roomName !== attacker.room.name
-        ) {
-            if (
-                creep.pos.roomName !== attacker.pos.roomName ||
-                creep.pos.getRangeTo(attacker) > 1
-            ) {
-                creep.moveTo(attacker, {
-                    range: 1,
-                    reusePath: 3
-                });
-            }
-
-            return;
-        }
-
-        // Определяем положение позади стрелка относительно цели
-        const dx = Math.sign(attacker.pos.x - stateTarget.pos.x);
-        const dy = Math.sign(attacker.pos.y - stateTarget.pos.y);
-
-        const directions = [
-            { x: 0, y: -1 },
-            { x: 1, y: -1 },
-            { x: 1, y: 0 },
-            { x: 1, y: 1 },
-            { x: 0, y: 1 },
-            { x: -1, y: 1 },
-            { x: -1, y: 0 },
-            { x: -1, y: -1 }
-        ];
-
-        const directionIndex = directions.findIndex(
-            direction =>
-                direction.x === dx &&
-                direction.y === dy
+        moveHealerBehindAttacker(
+            creep,
+            attacker,
+            stateTarget,
+            members
         );
-
-        if (directionIndex < 0) {
-            creep.moveTo(attacker, {
-                range: 1,
-                reusePath: 3
-            });
-
-            return;
-        }
-
-        // Два хиллера занимают разные клетки позади стрелка
-        const healers = members
-            .filter(member =>
-                member.memory.role === this.healerRole
-            )
-            .sort((a, b) => a.name.localeCompare(b.name));
-
-        const healerIndex = healers.findIndex(
-            healer => healer.name === creep.name
-        );
-
-        const offsetIndex = (
-            directionIndex + Math.max(0, healerIndex)
-        ) % directions.length;
-
-        const direction = directions[offsetIndex];
-
-        const x = attacker.pos.x + direction.x;
-        const y = attacker.pos.y + direction.y;
-
-        // Если позиция выходит за границы комнаты,
-        // держимся рядом со стрелком
-        if (x < 0 || x > 49 || y < 0 || y > 49) {
-            creep.moveTo(attacker, {
-                range: 1,
-                reusePath: 3
-            });
-
-            return;
-        }
-
-        const position = new RoomPosition(
-            x,
-            y,
-            attacker.room.name
-        );
-
-        if (!creep.pos.isEqualTo(position)) {
-            creep.moveTo(position, {
-                range: 0,
-                reusePath: 3
-            });
-        }
     }
 
 };
