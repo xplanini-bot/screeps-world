@@ -1,16 +1,15 @@
 
 module.exports = {
 
-    // Роль бешеного шахтёра
     role: "berserkMiner",
-
-    // Пока создаём одного шахтёра
     desiredCount: 1,
 
-    // Комната, которую будет защищать боевой отряд
-    targetRoom: "W23S32",
+    targetRoom: "",
 
-    // Тело: 6 WORK и 6 MOVE
+    // Отступаем за 20 тиков до появления хранителя
+    retreatBeforeSpawnTicks: 20,
+
+    // Тело: 6 WORK + 6 MOVE
     body: [
         WORK, WORK, WORK,
         WORK, WORK, WORK,
@@ -19,21 +18,28 @@ module.exports = {
         MOVE, MOVE, MOVE
     ],
 
-    // Создание бешеного шахтёра
+    // Создание шахтёра для логова, известного боевому отряду
     manageSpawning: function (spawn) {
+        if (!this.targetRoom || spawn.spawning) return;
 
-        if (spawn.spawning) return;
+        const squadId = "attackerSquad_" + this.targetRoom;
 
-        // Считаем шахтёров, назначенных в целевую комнату
-        const miners = Object.values(Game.creeps).filter(
-            creep =>
-                creep.memory.role === this.role &&
-                creep.memory.targetRoom === this.targetRoom
+        const squadState =
+            Memory.attackerSquads &&
+            Memory.attackerSquads[squadId];
+
+        // Не создаём шахтёра, пока отряд не выбрал логово
+        if (!squadState || !squadState.keeperLairId) {
+            return;
+        }
+
+        const existing = Object.values(Game.creeps).some(creep =>
+            creep.memory.role === this.role &&
+            creep.memory.targetRoom === this.targetRoom
         );
 
-        if (miners.length >= this.desiredCount) return;
+        if (existing) return;
 
-        // Рассчитываем стоимость тела
         const cost = this.body.reduce(
             (total, part) => total + BODYPART_COST[part],
             0
@@ -50,16 +56,320 @@ module.exports = {
                 memory: {
                     role: this.role,
                     targetRoom: this.targetRoom,
-                    homeRoomName: spawn.room.name
+                    homeRoomName: spawn.room.name,
+                    squadId: squadId,
+                    keeperLairId: squadState.keeperLairId,
+                    sourceId: null,
+                    minePosition: null,
+                    retreating: false,
+                    retreatPosition: null
                 }
             }
         );
 
         if (result === OK) {
             console.log(
-                "[БЕШЕНЫЙ ШАХТЁР] Создан: " +
-                name +
-                ", цель: " + this.targetRoom
+                "[БЕШЕНЫЙ ШАХТЁР] Создан: " + name +
+                ", логово: " + squadState.keeperLairId
+            );
+        }
+    },
+
+    // Находим выход из комнаты в направлении дома
+    getHomewardExit: function (creep, homeRoomName) {
+        const route = Game.map.findRoute(
+            creep.room.name,
+            homeRoomName
+        );
+
+        if (!Array.isArray(route) || route.length === 0) {
+            return null;
+        }
+
+        const exits = creep.room.find(route[0].exit);
+
+        return (
+            creep.pos.findClosestByPath(exits) ||
+            creep.pos.findClosestByRange(exits)
+        );
+    },
+
+    // Выбираем проходимую позицию рядом с источником
+    findMinePosition: function (creep, source) {
+        const room = source.room;
+        const candidates = [];
+
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+                if (dx === 0 && dy === 0) continue;
+
+                const x = source.pos.x + dx;
+                const y = source.pos.y + dy;
+
+                if (x < 1 || x > 48 || y < 1 || y > 48) {
+                    continue;
+                }
+
+                if (
+                    room.getTerrain().get(x, y) === TERRAIN_MASK_WALL
+                ) {
+                    continue;
+                }
+
+                const structures = room.lookForAt(
+                    LOOK_STRUCTURES,
+                    x,
+                    y
+                );
+
+                const blocked = structures.some(structure =>
+                    OBSTACLE_OBJECT_TYPES.includes(
+                        structure.structureType
+                    )
+                );
+
+                if (blocked) continue;
+
+                candidates.push(
+                    new RoomPosition(x, y, room.name)
+                );
+            }
+        }
+
+        return (
+            creep.pos.findClosestByPath(candidates) ||
+            creep.pos.findClosestByRange(candidates)
+        );
+    },
+
+    // Основная логика бешеного шахтёра
+    run: function (creep) {
+        if (creep.spawning) return;
+
+        const targetRoom = creep.memory.targetRoom;
+        const homeRoomName = creep.memory.homeRoomName;
+
+        if (!targetRoom || !homeRoomName) return;
+
+        // Идём в целевую комнату
+        if (creep.room.name !== targetRoom) {
+            creep.moveTo(
+                new RoomPosition(25, 25, targetRoom),
+                { reusePath: 20 }
+            );
+            return;
+        }
+
+        const lair = Game.getObjectById(
+            creep.memory.keeperLairId
+        );
+
+        // Без известного логова шахтёр не начинает добычу
+        if (
+            !lair ||
+            lair.structureType !== STRUCTURE_KEEPER_LAIR
+        ) {
+            if (Game.time % 25 === 0) {
+                console.log(
+                    "[БЕШЕНЫЙ ШАХТЁР] Не найдено логово: " +
+                    creep.memory.keeperLairId
+                );
+            }
+            return;
+        }
+
+        // Назначаем источник рядом с выбранным логовом
+        let source = creep.memory.sourceId
+            ? Game.getObjectById(creep.memory.sourceId)
+            : null;
+
+        if (!source || source.room.name !== targetRoom) {
+            const sources = creep.room.find(FIND_SOURCES);
+            source = lair.pos.findClosestByRange(sources);
+
+            if (!source) {
+                if (Game.time % 25 === 0) {
+                    console.log(
+                        "[БЕШЕНЫЙ ШАХТЁР] Не найден источник у логова " +
+                        lair.id
+                    );
+                }
+                return;
+            }
+
+            creep.memory.sourceId = source.id;
+            creep.memory.minePosition = null;
+
+            console.log(
+                "[БЕШЕНЫЙ ШАХТЁР] Назначен источник: " +
+                source.id + ", логово: " + lair.id
+            );
+        }
+
+        // Ищем именно хранителя, соответствующего этому логову
+        const keeperName = "Keeper" + lair.id;
+
+        const keeperAlive = creep.room
+            .find(FIND_HOSTILE_CREEPS)
+            .some(hostile => hostile.name === keeperName);
+
+        const ticksToSpawn = lair.ticksToSpawn;
+
+        const spawnSoon =
+            Number.isFinite(ticksToSpawn) &&
+            ticksToSpawn <= this.retreatBeforeSpawnTicks;
+
+        // Хранитель активен или скоро появится —
+        // отступаем в сторону домашней комнаты
+        if (keeperAlive || spawnSoon) {
+            if (!creep.memory.retreating) {
+                creep.memory.retreatPosition = null;
+                creep.memory.retreating = true;
+
+                console.log(
+                    "[БЕШЕНЫЙ ШАХТЁР] Отступление. " +
+                    "Хранитель: " +
+                    (keeperAlive ? "активен" : "скоро появится") +
+                    ", тиков до появления: " +
+                    ticksToSpawn
+                );
+            }
+
+            let retreatPosition = creep.memory.retreatPosition;
+
+            if (!retreatPosition) {
+                const exit = this.getHomewardExit(
+                    creep,
+                    homeRoomName
+                );
+
+                if (exit) {
+                    retreatPosition = {
+                        x: exit.x,
+                        y: exit.y,
+                        roomName: exit.roomName
+                    };
+
+                    creep.memory.retreatPosition = retreatPosition;
+                }
+            }
+
+            if (retreatPosition) {
+                const position = new RoomPosition(
+                    retreatPosition.x,
+                    retreatPosition.y,
+                    retreatPosition.roomName
+                );
+
+                if (!creep.pos.isEqualTo(position)) {
+                    creep.moveTo(position, {
+                        range: 0,
+                        reusePath: 10
+                    });
+                }
+            }
+
+            // На время опасности добычу прекращаем
+            return;
+        }
+
+        // Хранитель уничтожен, таймер снова безопасен
+        if (creep.memory.retreating) {
+            creep.memory.retreating = false;
+            creep.memory.retreatPosition = null;
+
+            console.log(
+                "[БЕШЕНЫЙ ШАХТЁР] Опасность миновала. " +
+                "Возвращаемся к источнику."
+            );
+        }
+
+        // Получаем и сохраняем позицию добычи
+        let minePosition = creep.memory.minePosition;
+
+        if (minePosition) {
+            const savedPosition = new RoomPosition(
+                minePosition.x,
+                minePosition.y,
+                minePosition.roomName
+            );
+
+            const structures = creep.room.lookForAt(
+                LOOK_STRUCTURES,
+                savedPosition.x,
+                savedPosition.y
+            );
+
+            const blocked = structures.some(structure =>
+                OBSTACLE_OBJECT_TYPES.includes(
+                    structure.structureType
+                )
+            );
+
+            if (
+                savedPosition.roomName !== targetRoom ||
+                savedPosition.getRangeTo(source) !== 1 ||
+                creep.room.getTerrain().get(
+                    savedPosition.x,
+                    savedPosition.y
+                ) === TERRAIN_MASK_WALL ||
+                blocked
+            ) {
+                minePosition = null;
+                creep.memory.minePosition = null;
+            }
+        }
+
+        if (!minePosition) {
+            const position = this.findMinePosition(
+                creep,
+                source
+            );
+
+            if (!position) {
+                if (Game.time % 25 === 0) {
+                    console.log(
+                        "[БЕШЕНЫЙ ШАХТЁР] Нет свободной клетки " +
+                        "рядом с источником " + source.id
+                    );
+                }
+                return;
+            }
+
+            minePosition = {
+                x: position.x,
+                y: position.y,
+                roomName: position.roomName
+            };
+
+            creep.memory.minePosition = minePosition;
+        }
+
+        const position = new RoomPosition(
+            minePosition.x,
+            minePosition.y,
+            minePosition.roomName
+        );
+
+        if (!creep.pos.isEqualTo(position)) {
+            creep.moveTo(position, {
+                range: 0,
+                reusePath: 10
+            });
+            return;
+        }
+
+        // Только добываем — энергия будет падать на землю
+        const result = creep.harvest(source);
+
+        if (
+            result !== OK &&
+            result !== ERR_NOT_ENOUGH_RESOURCES &&
+            Game.time % 25 === 0
+        ) {
+            console.log(
+                "[БЕШЕНЫЙ ШАХТЁР] Ошибка добычи: " +
+                result + ", источник: " + source.id
             );
         }
     }

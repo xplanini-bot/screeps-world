@@ -370,11 +370,23 @@ function updateSquadState(creep, expectedCount, homeRoomName) {
             "[ОТРЯД] Заняли позицию. Останавливаемся на лечение."
         );
     }
+    // Проверяем, что оба хиллера находятся
+    // не дальше одной клетки от стрелка
+    const healersAdjacentToAttacker = attacker &&
+        members
+            .filter(member =>
+                member.memory.role === "attackerHealer" &&
+                !member.spawning
+            )
+            .every(healer =>
+                healer.pos.roomName === attacker.pos.roomName &&
+                attacker.pos.getRangeTo(healer) <= 1
+            );
 
     // После полного лечения возвращаемся к атаке
     if (
         state.mode === "keeperHeal" &&
-        groupedWithLeader &&
+        healersAdjacentToAttacker &&
         members.every(member =>
             member.hits >= member.hitsMax
         )
@@ -628,10 +640,8 @@ module.exports = {
 
         // Короткое отступление и лечение:
         // стрелок держится рядом с ведущим хиллером
-        if (
-            state.mode === "keeperRetreat" ||
-            state.mode === "keeperHeal"
-        ) {
+        // Во время короткого отступления следуем за ведущим хиллером
+        if (state.mode === "keeperRetreat") {
             const leader = getRetreatLeader(members);
 
             if (!leader) {
@@ -651,7 +661,13 @@ module.exports = {
 
             return;
         }
-        
+
+        // Во время лечения стрелок остаётся на месте,
+        // чтобы хиллеры могли подойти к нему
+        if (state.mode === "keeperHeal") {
+            return;
+        }
+
         // После пересечения границы атакующей комнаты
         // стрелок сначала делает шаг внутрь, не ожидая хиллеров
         if (
@@ -877,8 +893,7 @@ module.exports = {
             return;
         }
 
-        // Короткое отступление от Source Keeper:
-        // ведущий занимает заданную позицию и ждёт отряд
+        // Короткое отступление и лечение
         if (
             state.mode === "keeperRetreat" ||
             state.mode === "keeperHeal"
@@ -890,12 +905,35 @@ module.exports = {
                 return;
             }
 
-            if (creep.name === leader.name) {
-                // Только во время движения к точке отступления
+            // В режиме лечения оба хиллера подходят к стрелку
+            if (state.mode === "keeperHeal") {
+                const attacker = members.find(member =>
+                    member.memory.role === this.role &&
+                    !member.spawning
+                );
+
+                if (!attacker) {
+                    returnToSpawn(creep, spawn);
+                    return;
+                }
+
                 if (
-                    state.mode === "keeperRetreat" &&
-                    state.retreatPosition
+                    creep.pos.roomName !== attacker.pos.roomName ||
+                    creep.pos.getRangeTo(attacker) > 1
                 ) {
+                    creep.moveTo(attacker, {
+                        range: 1,
+                        reusePath: 3
+                    });
+                }
+
+                return;
+            }
+
+            // Во время отступления ведущий хиллер идёт
+            // к выбранной безопасной позиции
+            if (creep.name === leader.name) {
+                if (state.retreatPosition) {
                     const position = new RoomPosition(
                         state.retreatPosition.x,
                         state.retreatPosition.y,
@@ -910,14 +948,13 @@ module.exports = {
                     }
                 }
 
-                // В режиме лечения ведущий остаётся на месте
                 return;
             }
 
-            // Стрелок и второй хиллер следуют за ведущим
+            // Второй хиллер следует за ведущим
             if (
                 creep.pos.roomName !== leader.pos.roomName ||
-                creep.pos.getRangeTo(leader) > 2
+                creep.pos.getRangeTo(leader) > 1
             ) {
                 creep.moveTo(leader, {
                     range: 1,

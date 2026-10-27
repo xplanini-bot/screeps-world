@@ -10,6 +10,8 @@ const miner = require("miner");
 const builderModule = require("builder");
 //const combatMiner = require("combatMiner");
 
+const berserkMiner = require("berserkMiner");
+
 // Количество необходимых ремонтников
 // const repairerCount = 1; теперь зависит от того есть ли что чинить (хотябы 1 контейнер)
 const DESIRED_CARRIERS = 2; // Перевозчик
@@ -3115,6 +3117,7 @@ module.exports.loop = function () {
         upgrader.manageSpawning(spawn, REMOTE_ROOMS);
         builderModule.manageSpawning(spawn, REMOTE_ROOMS);
         //combatMiner.manageSpawning(spawn);
+        berserkMiner.manageSpawning(spawn);
     }
 
     assignHarvestersToMines(homeRoom);
@@ -3227,6 +3230,9 @@ module.exports.loop = function () {
         //if (creep.memory.role === combatMiner.role) {
         //    combatMiner.run(creep);
         //}
+        if (creep.memory.role === berserkMiner.role) {
+            berserkMiner.run(creep);
+        }
     }
 };
 
