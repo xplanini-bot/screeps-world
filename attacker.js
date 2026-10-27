@@ -46,7 +46,7 @@ function getRetreatLeader(members) {
 }
 
 
-// Проверяем, находятся ли хиллеры рядом со стрелком
+// Проверяем, находятся ли хиллеры в радиусе 2 клеток от стрелка
 function areHealersCloseToAttacker(attacker, members) {
     const healers = members.filter(member =>
         member.memory.role === "attackerHealer" &&
@@ -55,7 +55,7 @@ function areHealersCloseToAttacker(attacker, members) {
 
     return healers.every(healer =>
         healer.pos.roomName === attacker.pos.roomName &&
-        attacker.pos.getRangeTo(healer) <= 1
+        attacker.pos.getRangeTo(healer) <= 2
     );
 }
 
@@ -346,7 +346,7 @@ function updateSquadState(creep, expectedCount, homeRoomName) {
         members.every(member =>
             !member.spawning &&
             member.pos.roomName === leader.pos.roomName &&
-            leader.pos.getRangeTo(member) <= 1
+            leader.pos.getRangeTo(member) <= 2
         );
 
     // Короткое отступление завершено:
@@ -641,7 +641,7 @@ module.exports = {
 
             if (
                 creep.pos.roomName !== leader.pos.roomName ||
-                creep.pos.getRangeTo(leader) > 1
+                creep.pos.getRangeTo(leader) > 2
             ) {
                 creep.moveTo(leader, {
                     range: 1,
@@ -826,7 +826,7 @@ module.exports = {
                 // когда стрелок находится рядом
                 if (
                     attacker.pos.roomName === creep.pos.roomName &&
-                    creep.pos.getRangeTo(attacker) <= 1
+                    creep.pos.getRangeTo(attacker) <= 2
                 ) {
                     returnToSpawn(creep, spawn);
                 }
@@ -837,7 +837,7 @@ module.exports = {
             // Второй хиллер следует за ведущим
             if (
                 creep.pos.roomName !== leader.pos.roomName ||
-                creep.pos.getRangeTo(leader) > 1
+                creep.pos.getRangeTo(leader) > 2
             ) {
                 creep.moveTo(leader, {
                     range: 1,
@@ -888,7 +888,7 @@ module.exports = {
             // Стрелок и второй хиллер следуют за ведущим
             if (
                 creep.pos.roomName !== leader.pos.roomName ||
-                creep.pos.getRangeTo(leader) > 1
+                creep.pos.getRangeTo(leader) > 2
             ) {
                 creep.moveTo(leader, {
                     range: 1,
