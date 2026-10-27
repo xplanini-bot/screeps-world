@@ -46,6 +46,104 @@ function getRetreatLeader(members) {
 }
 
 
+// Подводим хиллера вплотную к стрелку для лечения
+function moveHealerAdjacentToAttacker(creep, attacker, members) {
+    if (!attacker) return;
+
+    if (creep.pos.roomName !== attacker.pos.roomName) {
+        creep.moveTo(attacker, {
+            range: 1,
+            reusePath: 3
+        });
+        return;
+    }
+
+    const candidates = [];
+
+    for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+            if (dx === 0 && dy === 0) continue;
+
+            const x = attacker.pos.x + dx;
+            const y = attacker.pos.y + dy;
+
+            if (x < 1 || x > 48 || y < 1 || y > 48) {
+                continue;
+            }
+
+            if (
+                attacker.room.getTerrain().get(x, y) ===
+                TERRAIN_MASK_WALL
+            ) {
+                continue;
+            }
+
+            const pos = new RoomPosition(
+                x,
+                y,
+                attacker.room.name
+            );
+
+            const structures = pos.lookFor(LOOK_STRUCTURES);
+
+            if (structures.some(structure =>
+                OBSTACLE_OBJECT_TYPES.includes(
+                    structure.structureType
+                )
+            )) {
+                continue;
+            }
+
+            // Не выбираем клетку, занятую другим крипом
+            const occupied = pos.lookFor(LOOK_CREEPS).some(other =>
+                other.id !== creep.id
+            );
+
+            if (occupied) continue;
+
+            const path = creep.pos.findPathTo(pos, {
+                range: 0,
+                maxOps: 2000
+            });
+
+            if (!creep.pos.isEqualTo(pos) && path.length === 0) {
+                continue;
+            }
+
+            candidates.push({
+                pos,
+                distance: creep.pos.getRangeTo(pos),
+                pathLength: path.length
+            });
+        }
+    }
+
+    candidates.sort((a, b) =>
+        a.distance - b.distance ||
+        a.pathLength - b.pathLength
+    );
+
+    if (candidates.length === 0) {
+        // Если свободную соседнюю клетку найти не удалось,
+        // продолжаем пытаться подойти к стрелку
+        creep.moveTo(attacker, {
+            range: 1,
+            reusePath: 0
+        });
+
+        return;
+    }
+
+    const destination = candidates[0].pos;
+
+    if (!creep.pos.isEqualTo(destination)) {
+        creep.moveTo(destination, {
+            range: 0,
+            reusePath: 0
+        });
+    }
+}
+
 // Проверяем, находятся ли хиллеры в радиусе 2 клеток от стрелка
 function areHealersCloseToAttacker(attacker, members) {
     const healers = members.filter(member =>
@@ -1421,7 +1519,27 @@ module.exports = {
 
         // Лечим самого повреждённого доступного участника
         healSquadMember(creep, members);
+        // Во время восстановления оба хиллера
+        // обязательно подходят вплотную к стрелку
+        if (state.mode === "keeperHeal") {
+            const attacker = members.find(member =>
+                member.memory.role === this.role &&
+                !member.spawning
+            );
 
+            if (!attacker) {
+                returnToSpawn(creep, spawn);
+                return;
+            }
+
+            moveHealerAdjacentToAttacker(
+                creep,
+                attacker,
+                members
+            );
+
+            return;
+        }
         // Обычное отступление:
         // ведущий хиллер ждёт стрелка, второй идёт за ведущим
         if (state.mode === "retreat") {
