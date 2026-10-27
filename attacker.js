@@ -59,11 +59,85 @@ function areHealersCloseToAttacker(attacker, members) {
     );
 }
 
-// Располагаем хиллера с безопасной стороны стрелка
+// Определяем первый шаг, который планирует сделать стрелок
+function getAttackerMoveVector(attacker, target, members) {
+    const squadState =
+        Memory.attackerSquads &&
+        Memory.attackerSquads[attacker.memory.squadId];
+
+    let destination = null;
+    let range = 0;
+
+    // При отступлении стрелок следует за ведущим хиллером
+    if (
+        squadState &&
+        ["retreat", "keeperRetreat", "keeperHeal"].includes(
+            squadState.mode
+        )
+    ) {
+        const leader = getRetreatLeader(members);
+
+        if (
+            leader &&
+            (
+                leader.pos.roomName !== attacker.pos.roomName ||
+                attacker.pos.getRangeTo(leader) > 1
+            )
+        ) {
+            destination = leader;
+            range = 1;
+        }
+    } else if (
+        attacker.memory.targetRoom &&
+        attacker.pos.roomName !== attacker.memory.targetRoom
+    ) {
+        // При переходе в атакующую комнату
+        destination = new RoomPosition(
+            25,
+            25,
+            attacker.memory.targetRoom
+        );
+        range = 0;
+    } else if (
+        target &&
+        target.pos.roomName === attacker.pos.roomName &&
+        attacker.pos.getRangeTo(target) > 3
+    ) {
+        // Во время наступления движемся к цели атаки
+        destination = target;
+        range = 3;
+    }
+
+    if (!destination) return null;
+
+    const path = attacker.pos.findPathTo(destination, {
+        range: range,
+        maxOps: 2000
+    });
+
+    if (!path || path.length === 0) return null;
+
+    // Направление Screeps: от TOP (1) до TOP_LEFT (8)
+    const directions = [
+        null,
+        { dx: 0, dy: -1 },
+        { dx: 1, dy: -1 },
+        { dx: 1, dy: 0 },
+        { dx: 1, dy: 1 },
+        { dx: 0, dy: 1 },
+        { dx: -1, dy: 1 },
+        { dx: -1, dy: 0 },
+        { dx: -1, dy: -1 }
+    ];
+
+    return directions[path[0].direction] || null;
+}
+
+// Хиллер занимает свободную позицию позади или сбоку от стрелка
 function moveHealerBehindAttacker(creep, attacker, target, members) {
     if (!attacker) return;
 
-    // Если стрелок в другой комнате, сначала догоняем его
+    // Если стрелок уже в другой комнате, догоняем его
     if (creep.pos.roomName !== attacker.pos.roomName) {
         creep.moveTo(attacker, {
             range: 1,
@@ -72,144 +146,158 @@ function moveHealerBehindAttacker(creep, attacker, target, members) {
         return;
     }
 
-    const healers = members
-        .filter(member =>
-            member.memory.role === "attackerHealer" &&
-            !member.spawning
-        )
-        .sort((a, b) => a.name.localeCompare(b.name));
-
-    const healerIndex = healers.findIndex(
-        healer => healer.name === creep.name
+    const moveVector = getAttackerMoveVector(
+        attacker,
+        target,
+        members
     );
 
-    if (healerIndex < 0) return;
-
-    const targetInRoom = target &&
-        target.pos.roomName === attacker.pos.roomName;
-
+    // Если стрелок не движется, предпочитаем сторону,
+    // противоположную Source Keeper
     let awayX = 0;
     let awayY = 0;
 
-    // Если хранитель виден, выбираем сторону от него
-    if (targetInRoom) {
+    if (
+        target &&
+        target.pos.roomName === attacker.pos.roomName
+    ) {
         awayX = Math.sign(attacker.pos.x - target.pos.x);
         awayY = Math.sign(attacker.pos.y - target.pos.y);
-    } else {
-        // Если цель временно не видна, ориентируемся на дом
-        const homeRoomName =
-            creep.memory.homeRoomName ||
-            attacker.memory.homeRoomName;
-
-        const route = homeRoomName
-            ? Game.map.findRoute(attacker.room.name, homeRoomName)
-            : null;
-
-        if (Array.isArray(route) && route.length > 0) {
-            const exits = attacker.room.find(route[0].exit);
-            const exit = attacker.pos.findClosestByRange(exits);
-
-            if (exit) {
-                awayX = Math.sign(exit.x - attacker.pos.x);
-                awayY = Math.sign(exit.y - attacker.pos.y);
-            }
-        }
     }
 
-    const directions = [
-        { dx: -1, dy: -1 },
-        { dx: 0, dy: -1 },
-        { dx: 1, dy: -1 },
-        { dx: 1, dy: 0 },
-        { dx: 1, dy: 1 },
-        { dx: 0, dy: 1 },
-        { dx: -1, dy: 1 },
-        { dx: -1, dy: 0 }
-    ];
+    // Резервируем разные клетки для двух хиллеров
+    const squadState =
+        Memory.attackerSquads &&
+        Memory.attackerSquads[attacker.memory.squadId];
+
+    if (squadState) {
+        if (squadState.healerTargetsTick !== Game.time) {
+            squadState.healerTargetsTick = Game.time;
+            squadState.healerTargets = {};
+        }
+
+        if (!squadState.healerTargets) {
+            squadState.healerTargets = {};
+        }
+    }
 
     const candidates = [];
 
-    for (const direction of directions) {
-        const x = attacker.pos.x + direction.dx;
-        const y = attacker.pos.y + direction.dy;
+    for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+            if (dx === 0 && dy === 0) continue;
 
-        // Не занимаем клетки на границе комнаты
-        if (x < 1 || x > 48 || y < 1 || y > 48) {
-            continue;
-        }
+            const x = attacker.pos.x + dx;
+            const y = attacker.pos.y + dy;
 
-        if (
-            attacker.room.getTerrain().get(x, y) ===
-            TERRAIN_MASK_WALL
-        ) {
-            continue;
-        }
+            // Не выбираем край комнаты для боевой позиции
+            if (x < 1 || x > 48 || y < 1 || y > 48) {
+                continue;
+            }
 
-        const pos = new RoomPosition(
-            x,
-            y,
-            attacker.room.name
-        );
+            if (
+                attacker.room.getTerrain().get(x, y) ===
+                TERRAIN_MASK_WALL
+            ) {
+                continue;
+            }
 
-        const structures = pos.lookFor(LOOK_STRUCTURES);
-
-        const blocked = structures.some(structure =>
-            structure.structureType !== STRUCTURE_ROAD &&
-            structure.structureType !== STRUCTURE_CONTAINER &&
-            structure.structureType !== STRUCTURE_RAMPART &&
-            OBSTACLE_OBJECT_TYPES.includes(
-                structure.structureType
-            )
-        );
-
-        if (blocked) continue;
-
-        // Не выбираем клетку, занятую чужим крипом
-        const occupiedByOtherSquad = pos
-            .lookFor(LOOK_CREEPS)
-            .some(other =>
-                other.id !== creep.id &&
-                other.id !== attacker.id &&
-                !members.some(member => member.id === other.id)
+            const pos = new RoomPosition(
+                x,
+                y,
+                attacker.room.name
             );
 
-        if (occupiedByOtherSquad) continue;
+            const structures = pos.lookFor(LOOK_STRUCTURES);
 
-        candidates.push({
-            pos,
-            enemyRange: targetInRoom
-                ? pos.getRangeTo(target)
-                : 0,
-            alignment:
-                direction.dx * awayX +
-                direction.dy * awayY
-        });
+            const blocked = structures.some(structure =>
+                OBSTACLE_OBJECT_TYPES.includes(
+                    structure.structureType
+                )
+            );
+
+            if (blocked) continue;
+
+            // Не занимаем клетку другого крипа
+            const occupied = pos.lookFor(LOOK_CREEPS).some(other =>
+                other.id !== creep.id &&
+                other.id !== attacker.id
+            );
+
+            if (occupied) continue;
+
+            // Не используем клетку, уже выбранную другим хиллером
+            const reserved = squadState &&
+                Object.entries(
+                    squadState.healerTargets || {}
+                ).some(([name, point]) =>
+                    name !== creep.name &&
+                    point.roomName === pos.roomName &&
+                    point.x === pos.x &&
+                    point.y === pos.y
+                );
+
+            if (reserved) continue;
+
+            const moveDot = moveVector
+                ? dx * moveVector.dx + dy * moveVector.dy
+                : 0;
+
+            const safeDot = dx * awayX + dy * awayY;
+
+            candidates.push({
+                pos,
+                moveDot,
+                safeDot,
+                enemyRange:
+                    target &&
+                        target.pos.roomName === attacker.room.name
+                        ? pos.getRangeTo(target)
+                        : 0,
+                distance: creep.pos.getRangeTo(pos)
+            });
+        }
     }
 
-    // Сначала выбираем клетки дальше от хранителя,
-    // затем — лучше расположенные за стрелком
-    candidates.sort((a, b) =>
-        (b.enemyRange - a.enemyRange) ||
-        (b.alignment - a.alignment)
-    );
+    if (candidates.length === 0) return;
 
-    const destination = candidates[healerIndex];
+    let preferred = candidates;
 
-    if (!destination) return;
-
-    // Если второй участник отряда ещё занимает эту клетку,
-    // ждём, пока он освободит её
-    const occupiedBySquadMember = destination.pos
-        .lookFor(LOOK_CREEPS)
-        .some(other =>
-            other.id !== creep.id &&
-            members.some(member => member.id === other.id)
+    if (moveVector) {
+        // Не становимся впереди направления движения стрелка
+        preferred = candidates.filter(candidate =>
+            candidate.moveDot <= 0
         );
 
-    if (occupiedBySquadMember) return;
+        // Если все такие клетки заняты, ждём освобождения пути
+        if (preferred.length === 0) return;
 
-    if (!creep.pos.isEqualTo(destination.pos)) {
-        creep.moveTo(destination.pos, {
+        preferred.sort((a, b) =>
+            a.moveDot - b.moveDot ||
+            b.enemyRange - a.enemyRange ||
+            a.distance - b.distance
+        );
+    } else {
+        // Если стрелок стоит, выбираем безопасную сторону
+        preferred.sort((a, b) =>
+            b.safeDot - a.safeDot ||
+            b.enemyRange - a.enemyRange ||
+            a.distance - b.distance
+        );
+    }
+
+    const destination = preferred[0].pos;
+
+    if (squadState) {
+        squadState.healerTargets[creep.name] = {
+            x: destination.x,
+            y: destination.y,
+            roomName: destination.roomName
+        };
+    }
+
+    if (!creep.pos.isEqualTo(destination)) {
+        creep.moveTo(destination, {
             range: 0,
             reusePath: 3
         });
