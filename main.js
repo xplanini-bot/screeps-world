@@ -8,7 +8,7 @@ const attacker = require("attacker");
 const upgrader = require("upgrader");
 const miner = require("miner");
 const builderModule = require("builder");
-const combatMiner = require("combatMiner");
+//const combatMiner = require("combatMiner");
 
 // Количество необходимых ремонтников
 // const repairerCount = 1; теперь зависит от того есть ли что чинить (хотябы 1 контейнер)
@@ -1877,7 +1877,7 @@ function runCarrier(creep, spawn, homeRoom) {
     if (!container) {
         releaseReservation();
     }
-    
+
     // Сбрасываем старый резерв, если это контейнер контроллера
     if (
         container &&
@@ -3114,7 +3114,7 @@ module.exports.loop = function () {
         advancedUpgrader.manageSpawning(spawn);
         upgrader.manageSpawning(spawn, REMOTE_ROOMS);
         builderModule.manageSpawning(spawn, REMOTE_ROOMS);
-        combatMiner.manageSpawning(spawn);
+        //combatMiner.manageSpawning(spawn);
     }
 
     assignHarvestersToMines(homeRoom);
@@ -3224,9 +3224,9 @@ module.exports.loop = function () {
         if (creep.memory.role === attacker.healerRole) {
             attacker.runAttackerHealer(creep, spawn);
         }
-        if (creep.memory.role === combatMiner.role) {
-            combatMiner.run(creep);
-        }
+        //if (creep.memory.role === combatMiner.role) {
+        //    combatMiner.run(creep);
+        //}
     }
 };
 
