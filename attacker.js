@@ -721,24 +721,29 @@ function updateSquadState(creep, expectedCount, homeRoomName) {
             "[ОТРЯД] Заняли позицию. Останавливаемся на лечение."
         );
     }
-    // Проверяем, что оба хиллера находятся
-    // не дальше одной клетки от стрелка
-    const healersAdjacentToAttacker = attacker &&
-        members
-            .filter(member =>
-                member.memory.role === "attackerHealer" &&
-                !member.spawning
-            )
-            .every(healer =>
-                healer.pos.roomName === attacker.pos.roomName &&
-                attacker.pos.getRangeTo(healer) <= 1
-            );
+    /// После короткого отступления проверяем,
+    // что оба хиллера рядом со стрелком
+    const healers = members.filter(member =>
+        member.memory.role === "attackerHealer" &&
+        !member.spawning
+    );
 
-    // После полного лечения возвращаемся к атаке
+    const healersAdjacentToAttacker =
+        attacker &&
+        healers.length === 2 &&
+        healers.every(healer =>
+            healer.pos.roomName === attacker.pos.roomName &&
+            attacker.pos.getRangeTo(healer) <= 1
+        );
+
+    // Возобновляем атаку, когда все здоровы
+    // и оба хиллера находятся рядом со стрелком
     if (
         state.mode === "keeperHeal" &&
         healersAdjacentToAttacker &&
+        members.length >= expectedCount &&
         members.every(member =>
+            !member.spawning &&
             member.hits >= member.hitsMax
         )
     ) {
@@ -747,7 +752,8 @@ function updateSquadState(creep, expectedCount, homeRoomName) {
         delete state.retreatPosition;
 
         console.log(
-            "[ОТРЯД] Отряд полностью восстановлен. Возобновляем атаку."
+            "[ОТРЯД] Отряд полностью восстановлен. " +
+            "Возобновляем атаку."
         );
     }
 
@@ -1528,7 +1534,7 @@ module.exports = {
 
                 return;
             }
-            
+
             if (!leader) {
                 moveHealerBehindAttacker(
                     creep,
