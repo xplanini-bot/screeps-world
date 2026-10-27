@@ -24,7 +24,7 @@ module.exports = {
     emergencyAttacker: {
         role: "emergencyAttacker",
         desiredCount: 1,
-        body: [ATTACK, MOVE]
+        body: [ATTACK, ATTACK, MOVE, MOVE]
     },
 
     // Клетки, запрещённые для движения ближнего бойца
@@ -60,8 +60,12 @@ module.exports = {
     // Создание бойцов
     manageSpawning: function (spawn) {
 
-        // Экстренный атакующий поддерживается постоянно,
-        // сменщика создаём за 50 тиков до смерти
+        // Проверяем строительные площадки в домашней комнате
+        const constructionSites = spawn.room.find(
+            FIND_MY_CONSTRUCTION_SITES
+        );
+
+        // Экстренный атакующий нужен только при наличии строительства
         const attackers = Object.values(Game.creeps).filter(
             creep => creep.memory.role === this.emergencyAttacker.role
         );
@@ -77,14 +81,15 @@ module.exports = {
                 creep.ticksToLive <= 50
         );
 
-        // Если атакующих меньше нормы — создаём нового.
-        // Если старый скоро умрёт — заранее создаём сменщика.
-        // Не создаём лишних, если сменщик уже появился.
+        // Создаём атакующего только при наличии строительных площадок
         const shouldSpawn =
-            attackers.length < desiredCount ||
+            constructionSites.length > 0 &&
             (
-                attackers.length === desiredCount &&
-                needsReplacement
+                attackers.length < desiredCount ||
+                (
+                    attackers.length === desiredCount &&
+                    needsReplacement
+                )
             );
 
         if (shouldSpawn && !spawn.spawning) {
