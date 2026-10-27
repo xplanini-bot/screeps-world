@@ -1,9 +1,6 @@
 
-function calculatePositionPlan(room) {
-    // До появления стрелка используем центр комнаты
-    // как исходную точку для поиска ближайшего Keeper.
-    const origin = new RoomPosition(25, 25, room.name);
 
+function calculatePositionPlans(room) {
     const keepers = room.find(FIND_HOSTILE_CREEPS, {
         filter: hostile =>
             hostile.owner &&
@@ -11,66 +8,73 @@ function calculatePositionPlan(room) {
     });
 
     if (keepers.length === 0) {
-        return { error: "Source Keeper пока не найден." };
+        return { error: "В комнате не найден ни один Source Keeper." };
     }
 
-    const keeper = origin.findClosestByRange(keepers);
+    // Сортируем для стабильного порядка вывода в логе.
+    keepers.sort((a, b) =>
+        a.pos.x - b.pos.x || a.pos.y - b.pos.y
+    );
 
     const lairs = room.find(FIND_STRUCTURES, {
         filter: structure =>
             structure.structureType === STRUCTURE_KEEPER_LAIR
     });
 
+    const sources = room.find(FIND_SOURCES);
+
     if (lairs.length === 0) {
-        return { error: "Логово Source Keeper не найдено." };
+        return { error: "В комнате не найдено ни одного логова." };
     }
 
-    const lair = keeper.pos.findClosestByRange(lairs);
+    return keepers.map((keeper, index) => {
+        const source = keeper.pos.findClosestByRange(sources);
+        const lair = keeper.pos.findClosestByRange(lairs);
 
-    const direction = getDirectionVector(
-        lair.pos,
-        keeper.pos
-    );
-
-    const firePos = findStandablePosition(
-        room,
-        getForwardCandidates(keeper.pos, direction, 3)
-    );
-
-
-    if (!firePos) {
-        const details = getForwardCandidates(
-            keeper.pos,
-            direction,
-            3
-        ).map(point =>
-            point.x + "," + point.y + ": " +
-            (getPositionProblem(room, point) || "неизвестная причина")
-        ).join("; ");
-
-        return {
-            error: "Не удалось найти огневую позицию. Проверены: " + details
+        const result = {
+            number: index + 1,
+            keeper: getPositionData(keeper.pos),
+            source: source ? getPositionData(source.pos) : null,
+            lair: getPositionData(lair.pos)
         };
-    }
 
+        const direction = getDirectionVector(
+            lair.pos,
+            keeper.pos
+        );
 
-    const basePos = findStandablePosition(
-        room,
-        getForwardCandidates(firePos, direction, 2)
-    );
+        result.direction = direction;
 
-    if (!basePos) {
-        return { error: "Не удалось найти базу отступления." };
-    }
+        // Ищем огневую позицию на расстоянии 3 клеток.
+        const firePos = findStandablePosition(
+            room,
+            getForwardCandidates(keeper.pos, direction, 3)
+        );
 
-    return {
-        keeper: getPositionData(keeper.pos),
-        lair: getPositionData(lair.pos),
-        direction,
-        fire: getPositionData(firePos),
-        base: getPositionData(basePos)
-    };
+        if (!firePos) {
+            result.error = "Не найдена подходящая огневая позиция.";
+            return result;
+        }
+
+        result.fire = getPositionData(firePos);
+
+        // База — ещё 2 клетки от Keeper через огневую позицию.
+        const basePos = findStandablePosition(
+            room,
+            getForwardCandidates(firePos, direction, 2)
+        );
+
+        if (!basePos) {
+            result.error = "Не найдена подходящая база отступления.";
+            return result;
+        }
+
+        result.base = getPositionData(basePos);
+
+        return result;
+    });
 }
+
 
 
 function getPositionData(pos) {
@@ -308,10 +312,11 @@ module.exports = {
                 return;
             }
 
-            const plan = calculatePositionPlan(room);
 
-            if (plan.error) {
-                const message = room.name + ": " + plan.error;
+            const plans = calculatePositionPlans(room);
+
+            if (plans.error) {
+                const message = room.name + ": " + plans.error;
 
                 if (Memory.attackerPreviewStatus !== message) {
                     console.log("[attacker preview] " + message);
@@ -321,37 +326,72 @@ module.exports = {
                 return;
             }
 
-            const signature = JSON.stringify(plan);
+            const signature = JSON.stringify(plans);
 
-            // Выводим результат, только если он изменился.
             if (Memory.attackerPreviewSignature !== signature) {
-                console.log("[attacker preview] Комната: " + room.name);
                 console.log(
-                    "[attacker preview] Keeper: " +
-                    plan.keeper.x + "," + plan.keeper.y
+                    "[attacker preview] Комната: " +
+                    room.name +
+                    ", обнаружено Source Keeper: " +
+                    plans.length
                 );
-                console.log(
-                    "[attacker preview] Логово: " +
-                    plan.lair.x + "," + plan.lair.y
-                );
-                console.log(
-                    "[attacker preview] Направление: dx=" +
-                    plan.direction.dx + ", dy=" + plan.direction.dy
-                );
-                console.log(
-                    "[attacker preview] Огневая позиция: " +
-                    plan.fire.x + "," + plan.fire.y
-                );
-                console.log(
-                    "[attacker preview] База отступления: " +
-                    plan.base.x + "," + plan.base.y
-                );
+
+                for (const plan of plans) {
+                    console.log(
+                        "[attacker preview] === Цель " +
+                        plan.number + " ==="
+                    );
+
+                    console.log(
+                        "[attacker preview] Ближайший источник: " +
+                        (plan.source
+                            ? plan.source.x + "," + plan.source.y
+                            : "не найден")
+                    );
+
+                    console.log(
+                        "[attacker preview] Keeper: " +
+                        plan.keeper.x + "," + plan.keeper.y
+                    );
+
+                    console.log(
+                        "[attacker preview] Логово: " +
+                        plan.lair.x + "," + plan.lair.y
+                    );
+
+                    console.log(
+                        "[attacker preview] Направление: dx=" +
+                        plan.direction.dx +
+                        ", dy=" + plan.direction.dy
+                    );
+
+                    if (plan.fire) {
+                        console.log(
+                            "[attacker preview] Огневая позиция: " +
+                            plan.fire.x + "," + plan.fire.y
+                        );
+                    }
+
+                    if (plan.base) {
+                        console.log(
+                            "[attacker preview] База отступления: " +
+                            plan.base.x + "," + plan.base.y
+                        );
+                    }
+
+                    if (plan.error) {
+                        console.log(
+                            "[attacker preview] Внимание: " + plan.error
+                        );
+                    }
+                }
 
                 Memory.attackerPreviewSignature = signature;
                 Memory.attackerPreviewStatus = "Расчёт выполнен.";
             }
 
             return;
+
         }
 
         // Обычный режим создания стрелка.
