@@ -4,7 +4,7 @@ module.exports = {
     role: "berserkMiner",
     desiredCount: 1,
 
-    targetRoom: "",
+    targetRoom: "E26N55",
 
     // Отступаем за 20 тиков до появления хранителя
     retreatBeforeSpawnTicks: 20,
