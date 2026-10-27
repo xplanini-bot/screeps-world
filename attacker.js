@@ -37,9 +37,22 @@ function calculatePositionPlan(room) {
         getForwardCandidates(keeper.pos, direction, 3)
     );
 
+
     if (!firePos) {
-        return { error: "Не удалось найти огневую позицию." };
+        const details = getForwardCandidates(
+            keeper.pos,
+            direction,
+            3
+        ).map(point =>
+            point.x + "," + point.y + ": " +
+            (getPositionProblem(room, point) || "неизвестная причина")
+        ).join("; ");
+
+        return {
+            error: "Не удалось найти огневую позицию. Проверены: " + details
+        };
     }
+
 
     const basePos = findStandablePosition(
         room,
@@ -104,48 +117,87 @@ function getDirectionVector(lair, keeper) {
 //
 // Для стрелка distance = 3.
 // Для базы distance = 2.
+
 function getForwardCandidates(origin, direction, distance) {
-    const x = origin.x + direction.dx * distance;
-    const y = origin.y + direction.dy * distance;
+    const candidates = [];
 
-    const candidates = [{ x, y }];
+    for (let dx = -distance; dx <= distance; dx++) {
+        for (let dy = -distance; dy <= distance; dy++) {
+            // Проверяем только клетки на нужной дистанции.
+            if (Math.max(Math.abs(dx), Math.abs(dy)) !== distance) {
+                continue;
+            }
 
-    if (direction.dx === 0) {
-        candidates.push(
-            { x: x - 1, y },
-            { x: x + 1, y }
-        );
-    } else if (direction.dy === 0) {
-        candidates.push(
-            { x, y: y - 1 },
-            { x, y: y + 1 }
-        );
-    } else {
-        candidates.push(
-            { x: x - direction.dx, y },
-            { x, y: y - direction.dy }
-        );
+            let lateral;
+            let forward;
+
+            if (direction.dx === 0) {
+                // Движение строго вверх или вниз.
+                forward = dy * direction.dy;
+                lateral = Math.abs(dx);
+
+            } else if (direction.dy === 0) {
+                // Движение строго влево или вправо.
+                forward = dx * direction.dx;
+                lateral = Math.abs(dy);
+
+            } else {
+                // Диагональ: клетка должна быть впереди
+                // и находиться в том же общем направлении.
+                const alongX = dx * direction.dx;
+                const alongY = dy * direction.dy;
+
+                if (alongX <= 0 || alongY <= 0) {
+                    continue;
+                }
+
+                forward = Math.min(alongX, alongY);
+                lateral = Math.abs(alongX - alongY);
+            }
+
+            // Не рассматриваем клетки позади или слишком сбоку.
+            if (forward <= 0 || lateral > distance - 1) {
+                continue;
+            }
+
+            candidates.push({
+                x: origin.x + dx,
+                y: origin.y + dy,
+                lateral,
+                forward
+            });
+        }
     }
 
-    return candidates;
+    // Сначала проверяем клетки ближе к центральному направлению.
+    candidates.sort((a, b) =>
+        a.lateral - b.lateral || b.forward - a.forward
+    );
+
+    return candidates.map(({ x, y }) => ({ x, y }));
 }
+
 
 
 // Проверяем, можно ли использовать клетку
 // как постоянную позицию стрелка.
-function isStandable(room, point) {
+
+function getPositionProblem(room, point) {
     if (
         point.x < 0 || point.x > 49 ||
         point.y < 0 || point.y > 49
     ) {
-        return false;
+        return "за пределами комнаты";
     }
 
     const terrain = room.getTerrain().get(point.x, point.y);
 
-    // Не используем ни стены, ни болота.
-    if (terrain & (TERRAIN_MASK_WALL | TERRAIN_MASK_SWAMP)) {
-        return false;
+    if (terrain & TERRAIN_MASK_WALL) {
+        return "стена";
+    }
+
+    if (terrain & TERRAIN_MASK_SWAMP) {
+        return "болото";
     }
 
     const structures = room.lookForAt(
@@ -154,7 +206,7 @@ function isStandable(room, point) {
         point.y
     );
 
-    const blocked = structures.some(structure => {
+    const blocker = structures.find(structure => {
         if (
             structure.structureType === STRUCTURE_ROAD ||
             structure.structureType === STRUCTURE_CONTAINER
@@ -169,8 +221,17 @@ function isStandable(room, point) {
         return true;
     });
 
-    return !blocked;
+    if (blocker) {
+        return "занято структурой " + blocker.structureType;
+    }
+
+    return null;
 }
+
+function isStandable(room, point) {
+    return getPositionProblem(room, point) === null;
+}
+
 
 
 // Выбираем первую подходящую клетку.
@@ -224,102 +285,112 @@ module.exports = {
 
     // Пока управляем созданием только самого стрелка.
     // Создание и поведение хиллеров добавим отдельно.
-    
-manageSpawning(spawn) {
-    if (!this.targetRoom || !spawn) {
-        return;
-    }
 
-    // Режим проверки: только расчёт, без создания стрелка.
-    if (this.previewOnly) {
-        const room = Game.rooms[this.targetRoom];
+    manageSpawning(spawn) {
+        if (!this.targetRoom || !spawn) {
+            return;
+        }
 
-        if (!room) {
-            const message =
-                "Комната " + this.targetRoom +
-                " сейчас не видна. Нужен обзор комнаты.";
+        // Режим проверки: только расчёт, без создания стрелка.
+        if (this.previewOnly) {
+            const room = Game.rooms[this.targetRoom];
 
-            if (Memory.attackerPreviewStatus !== message) {
-                console.log("[attacker preview] " + message);
-                Memory.attackerPreviewStatus = message;
+            if (!room) {
+                const message =
+                    "Комната " + this.targetRoom +
+                    " сейчас не видна. Нужен обзор комнаты.";
+
+                if (Memory.attackerPreviewStatus !== message) {
+                    console.log("[attacker preview] " + message);
+                    Memory.attackerPreviewStatus = message;
+                }
+
+                return;
+            }
+
+            const plan = calculatePositionPlan(room);
+
+            if (plan.error) {
+                const message = room.name + ": " + plan.error;
+
+                if (Memory.attackerPreviewStatus !== message) {
+                    console.log("[attacker preview] " + message);
+                    Memory.attackerPreviewStatus = message;
+                }
+
+                return;
+            }
+
+            const signature = JSON.stringify(plan);
+
+            // Выводим результат, только если он изменился.
+            if (Memory.attackerPreviewSignature !== signature) {
+                console.log("[attacker preview] Комната: " + room.name);
+                console.log(
+                    "[attacker preview] Keeper: " +
+                    plan.keeper.x + "," + plan.keeper.y
+                );
+                console.log(
+                    "[attacker preview] Логово: " +
+                    plan.lair.x + "," + plan.lair.y
+                );
+                console.log(
+                    "[attacker preview] Направление: dx=" +
+                    plan.direction.dx + ", dy=" + plan.direction.dy
+                );
+                console.log(
+                    "[attacker preview] Огневая позиция: " +
+                    plan.fire.x + "," + plan.fire.y
+                );
+                console.log(
+                    "[attacker preview] База отступления: " +
+                    plan.base.x + "," + plan.base.y
+                );
+
+                Memory.attackerPreviewSignature = signature;
+                Memory.attackerPreviewStatus = "Расчёт выполнен.";
             }
 
             return;
         }
 
-        const plan = calculatePositionPlan(room);
-
-        if (plan.error) {
-            const message = room.name + ": " + plan.error;
-
-            if (Memory.attackerPreviewStatus !== message) {
-                console.log("[attacker preview] " + message);
-                Memory.attackerPreviewStatus = message;
-            }
-
+        // Обычный режим создания стрелка.
+        if (spawn.spawning) {
             return;
         }
 
-        const signature = JSON.stringify(plan);
+        const attackers = Object.values(Game.creeps).filter(
+            creep => creep.memory.role === this.role
+        );
 
-        // Выводим результат, только если он изменился.
-        if (Memory.attackerPreviewSignature !== signature) {
-            console.log("[attacker preview] Комната: " + room.name);
-            console.log(
-                "[attacker preview] Keeper: " +
-                plan.keeper.x + "," + plan.keeper.y
-            );
-            console.log(
-                "[attacker preview] Логово: " +
-                plan.lair.x + "," + plan.lair.y
-            );
-            console.log(
-                "[attacker preview] Направление: dx=" +
-                plan.direction.dx + ", dy=" + plan.direction.dy
-            );
-            console.log(
-                "[attacker preview] Огневая позиция: " +
-                plan.fire.x + "," + plan.fire.y
-            );
-            console.log(
-                "[attacker preview] База отступления: " +
-                plan.base.x + "," + plan.base.y
-            );
-
-            Memory.attackerPreviewSignature = signature;
-            Memory.attackerPreviewStatus = "Расчёт выполнен.";
+        if (attackers.length >= this.desiredCount) {
+            return;
         }
 
-        return;
-    }
-
-    // Обычный режим создания стрелка.
-    if (spawn.spawning) {
-        return;
-    }
-
-    const attackers = Object.values(Game.creeps).filter(
-        creep => creep.memory.role === this.role
-    );
-
-    if (attackers.length >= this.desiredCount) {
-        return;
-    }
-
-    spawn.spawnCreep(
-        this.body,
-        `Attacker_${Game.time}`,
-        {
-            memory: {
-                role: this.role
+        spawn.spawnCreep(
+            this.body,
+            `Attacker_${Game.time}`,
+            {
+                memory: {
+                    role: this.role
+                }
             }
-        }
-    );
-},
+        );
+    },
 
+
+    runAttackerHealer(creep) {
+        // Временно отключено: поведение хиллеров
+        // будет реализовано отдельно.
+        return;
+    },
 
 
     runAttacker(creep) {
+        if (this.previewOnly || creep.spawning || !this.targetRoom) {
+            return;
+        }
+
         if (creep.spawning || !this.targetRoom) {
             return;
         }
@@ -475,4 +546,5 @@ manageSpawning(spawn) {
             creep.moveTo(firePos, { reusePath: 20 });
         }
     }
+
 };
