@@ -830,71 +830,213 @@ module.exports = {
 
         }
 
+
         // Обычный режим создания стрелка.
         if (spawn.spawning) {
             return;
         }
 
-
         const allCreeps = Object.values(Game.creeps);
 
         const attackers = allCreeps.filter(
-            creep => creep.memory.role === this.role
+            creep =>
+                creep.memory.role === this.role &&
+                !creep.memory.attackerReserve
         );
 
-        // Сначала создаём самого стрелка.
-        if (attackers.length < this.desiredCount) {
-            spawn.spawnCreep(
+        const attackerReserves = allCreeps.filter(
+            creep =>
+                creep.memory.role === this.role &&
+                creep.memory.attackerReserve
+        );
+
+        // Первичное создание стрелка, если нет ни действующего,
+        // ни резервного.
+        if (
+            attackers.length < this.desiredCount &&
+            attackerReserves.length === 0
+        ) {
+            const name = "Attacker_" + Game.time;
+
+            const result = spawn.spawnCreep(
                 this.body,
-                `Attacker_${Game.time}`,
+                name,
                 {
                     memory: {
-                        role: this.role
+                        role: this.role,
+                        targetRoom: this.targetRoom,
+                        homeRoomName: spawn.room.name
                     }
                 }
             );
 
+            if (result === OK) {
+                console.log(
+                    "[ATTACKER] Создан основной стрелок: " + name
+                );
+            }
+
             return;
         }
 
-        // Затем создаём недостающих хиллеров.
+        // Плановая замена стрелка за 80 тиков до смерти.
+        const agingAttacker = attackers.find(creep =>
+            !creep.spawning &&
+            Number.isFinite(creep.ticksToLive) &&
+            creep.ticksToLive <= 80 &&
+            !attackerReserves.some(
+                reserve =>
+                    reserve.memory.replacementFor === creep.name
+            )
+        );
+
+        if (agingAttacker) {
+            const name = "AttackerReserve_" + Game.time;
+
+            const result = spawn.spawnCreep(
+                this.body,
+                name,
+                {
+                    memory: {
+                        role: this.role,
+                        targetRoom: this.targetRoom,
+                        homeRoomName: spawn.room.name,
+                        attackerReserve: true,
+                        replacementFor: agingAttacker.name,
+                        reserveSnapshot: {
+                            attackerPositions: JSON.parse(
+                                JSON.stringify(
+                                    agingAttacker.memory.attackerPositions || {}
+                                )
+                            ),
+                            lastPos: getPositionData(agingAttacker.pos)
+                        }
+                    }
+                }
+            );
+
+            if (result === OK) {
+                console.log(
+                    "[ATTACKER] Создан резерв для " +
+                    agingAttacker.name + ": " + name
+                );
+            }
+
+            // Сначала пытаемся создать резервного стрелка.
+            return;
+        }
+
         const healers = allCreeps.filter(
-            creep => creep.memory.role === this.healerRole
+            creep =>
+                creep.memory.role === this.healerRole &&
+                !creep.memory.healerReserve
         );
 
-        if (healers.length >= this.healerDesiredCount) {
+        const healerReserves = allCreeps.filter(
+            creep =>
+                creep.memory.role === this.healerRole &&
+                creep.memory.healerReserve
+        );
+
+        // Первичное создание недостающего хиллера.
+        if (healers.length < this.healerDesiredCount) {
+            if (healerReserves.length === 0) {
+                const usedSlots = new Set(
+                    healers.map(creep => creep.memory.healerSlot)
+                );
+
+                let slot = 0;
+
+                while (
+                    usedSlots.has(slot) &&
+                    slot < this.healerDesiredCount
+                ) {
+                    slot++;
+                }
+
+                if (slot < this.healerDesiredCount) {
+                    const name =
+                        "AttackerHealer_" + slot + "_" + Game.time;
+
+                    const result = spawn.spawnCreep(
+                        this.healerBody,
+                        name,
+                        {
+                            memory: {
+                                role: this.healerRole,
+                                healerSlot: slot,
+                                targetRoom: this.targetRoom,
+                                homeRoomName: spawn.room.name
+                            }
+                        }
+                    );
+
+                    if (result === OK) {
+                        console.log(
+                            "[ATTACKER] Создан хиллер: " + name
+                        );
+                    }
+                }
+            }
+
             return;
         }
 
-        const usedSlots = new Set(
-            healers.map(creep => creep.memory.healerSlot)
+        // Ищем хиллера, которому осталось 40 тиков жизни.
+        // Для каждого старого хиллера создаётся только один резерв.
+        const agingHealer = healers.find(creep =>
+            !creep.spawning &&
+            Number.isFinite(creep.ticksToLive) &&
+            creep.ticksToLive <= 40 &&
+            !healerReserves.some(
+                reserve =>
+                    reserve.memory.replacementFor === creep.name
+            )
         );
 
-        let slot = 0;
-
-        while (
-            usedSlots.has(slot) &&
-            slot < this.healerDesiredCount
-        ) {
-            slot++;
-        }
-
-        if (slot >= this.healerDesiredCount) {
+        if (!agingHealer) {
             return;
         }
 
-        spawn.spawnCreep(
+        const slot = Number.isInteger(agingHealer.memory.healerSlot)
+            ? agingHealer.memory.healerSlot
+            : 0;
+
+        const name =
+            "AttackerHealerReserve_" + slot + "_" + Game.time;
+
+        const result = spawn.spawnCreep(
             this.healerBody,
-            `AttackerHealer_${slot}_${Game.time}`,
+            name,
             {
                 memory: {
                     role: this.healerRole,
-                    healerSlot: slot
+                    healerSlot: slot,
+                    targetRoom: this.targetRoom,
+                    homeRoomName: spawn.room.name,
+                    healerReserve: true,
+                    replacementFor: agingHealer.name,
+                    reserveSnapshot: {
+                        healerSlot: slot,
+                        healerPositions: JSON.parse(
+                            JSON.stringify(
+                                agingHealer.memory.healerPositions || {}
+                            )
+                        ),
+                        lastPos: getPositionData(agingHealer.pos)
+                    }
                 }
             }
         );
 
+        if (result === OK) {
+            console.log(
+                "[ATTACKER] Создан резерв для хиллера " +
+                agingHealer.name + ": " + name
+            );
+        }
     },
+
 
 
 
@@ -903,9 +1045,103 @@ module.exports = {
             return;
         }
 
+
+
+        // Резервный хиллер только движется в целевую комнату
+        // и обновляет снимок состояния старого хиллера.
+        if (creep.memory.healerReserve) {
+            const oldName = creep.memory.replacementFor;
+            const oldHealer = oldName && Game.creeps[oldName];
+
+            if (oldHealer) {
+                creep.memory.reserveSnapshot = {
+                    healerSlot: oldHealer.memory.healerSlot,
+                    healerPositions: JSON.parse(
+                        JSON.stringify(
+                            oldHealer.memory.healerPositions || {}
+                        )
+                    ),
+                    lastPos: getPositionData(oldHealer.pos)
+                };
+
+                if (creep.room.name !== this.targetRoom) {
+                    creep.moveTo(
+                        new RoomPosition(25, 25, this.targetRoom),
+                        { reusePath: 20 }
+                    );
+                } else if (!creep.memory.reserveWaitingLogged) {
+                    console.log(
+                        "[ATTACKER] Резервный хиллер " + creep.name +
+                        " прибыл в комнату и ожидает смерти " +
+                        oldHealer.name
+                    );
+
+                    creep.memory.reserveWaitingLogged = true;
+                }
+
+                return;
+            }
+
+            // Старый хиллер умер. Дожидаемся целевой комнаты.
+            if (creep.room.name !== this.targetRoom) {
+                creep.moveTo(
+                    new RoomPosition(25, 25, this.targetRoom),
+                    { reusePath: 20 }
+                );
+                return;
+            }
+
+            const snapshot = creep.memory.reserveSnapshot || {};
+            const oldMemory =
+                Memory.creeps && Memory.creeps[oldName];
+
+            const oldPositions =
+                snapshot.healerPositions ||
+                (oldMemory && oldMemory.healerPositions);
+
+            const oldSlot =
+                Number.isInteger(snapshot.healerSlot)
+                    ? snapshot.healerSlot
+                    : oldMemory && oldMemory.healerSlot;
+
+            const lastPos =
+                snapshot.lastPos ||
+                (oldMemory && oldMemory.lastPos) ||
+                null;
+
+            if (Number.isInteger(oldSlot)) {
+                creep.memory.healerSlot = oldSlot;
+            }
+
+            if (oldPositions) {
+                creep.memory.healerPositions = JSON.parse(
+                    JSON.stringify(oldPositions)
+                );
+            }
+
+            if (
+                lastPos &&
+                lastPos.roomName === this.targetRoom
+            ) {
+                creep.memory.takeoverPosition = lastPos;
+            }
+
+            delete creep.memory.healerReserve;
+            delete creep.memory.replacementFor;
+            delete creep.memory.reserveSnapshot;
+            delete creep.memory.reserveWaitingLogged;
+
+            console.log(
+                "[ATTACKER] Резервный хиллер " + creep.name +
+                " активирован. Прежний хиллер: " + oldName
+            );
+        }
+
         // Находим своего стрелка.
         const attacker = Object.values(Game.creeps).find(
-            c => c.memory.role === this.role
+            c =>
+                c.memory.role === this.role &&
+                !c.memory.attackerReserve
         );
 
         if (!attacker) {
@@ -920,6 +1156,8 @@ module.exports = {
             );
             return;
         }
+
+        creep.memory.lastPos = getPositionData(creep.pos);
 
         const points = attacker.memory.attackerPositions;
 
@@ -1025,6 +1263,27 @@ module.exports = {
             creep.memory.healerPositions = healerPositions;
         }
 
+        
+        // После замены сначала занимаем прежнюю клетку хиллера.
+        if (creep.memory.takeoverPosition) {
+            const takeoverPos = new RoomPosition(
+                creep.memory.takeoverPosition.x,
+                creep.memory.takeoverPosition.y,
+                creep.memory.takeoverPosition.roomName
+            );
+
+            if (!creep.pos.isEqualTo(takeoverPos)) {
+                creep.moveTo(takeoverPos, {
+                    range: 0,
+                    reusePath: 5
+                });
+
+                return;
+            }
+
+            delete creep.memory.takeoverPosition;
+        }
+
         // Выбираем позицию в зависимости от фазы стрелка.
         let targetSpot;
         let targetMode;
@@ -1096,6 +1355,100 @@ module.exports = {
             return;
         }
 
+
+        // Резервный стрелок только идёт в целевую комнату
+        // и копирует состояние действующего стрелка.
+        // Пока прежний жив, он не участвует в боевой логике.
+        if (creep.memory.attackerReserve) {
+            const oldName = creep.memory.replacementFor;
+            const oldAttacker = oldName && Game.creeps[oldName];
+
+            if (oldAttacker) {
+                const oldPoints =
+                    oldAttacker.memory.attackerPositions;
+
+                if (oldPoints) {
+                    creep.memory.reserveSnapshot = {
+                        attackerPositions: JSON.parse(
+                            JSON.stringify(oldPoints)
+                        ),
+                        lastPos: getPositionData(oldAttacker.pos)
+                    };
+                }
+
+                if (creep.room.name !== this.targetRoom) {
+                    creep.moveTo(
+                        new RoomPosition(25, 25, this.targetRoom),
+                        { reusePath: 20 }
+                    );
+                } else if (!creep.memory.reserveWaitingLogged) {
+                    console.log(
+                        "[ATTACKER] Резерв " + creep.name +
+                        " прибыл в комнату и ожидает смерти " +
+                        oldAttacker.name
+                    );
+
+                    creep.memory.reserveWaitingLogged = true;
+                }
+
+                return;
+            }
+
+            // Старый стрелок уже умер.
+            // Если резерв ещё не в целевой комнате — продолжаем путь.
+            if (creep.room.name !== this.targetRoom) {
+                creep.moveTo(
+                    new RoomPosition(25, 25, this.targetRoom),
+                    { reusePath: 20 }
+                );
+                return;
+            }
+
+            // Используем последнее сохранённое состояние.
+            const snapshot = creep.memory.reserveSnapshot || {};
+            const oldMemory =
+                Memory.creeps && Memory.creeps[oldName];
+
+            const savedPoints =
+                snapshot.attackerPositions ||
+                (oldMemory && oldMemory.attackerPositions);
+
+            const lastPos =
+                snapshot.lastPos ||
+                (savedPoints && savedPoints.lastPos) ||
+                null;
+
+            if (savedPoints) {
+                creep.memory.attackerPositions = JSON.parse(
+                    JSON.stringify(savedPoints)
+                );
+
+                const inherited = creep.memory.attackerPositions;
+
+                // Не считаем полное здоровье нового стрелка
+                // повреждением относительно старого.
+                inherited.lastHits = creep.hits;
+
+                if (
+                    lastPos &&
+                    lastPos.roomName === this.targetRoom
+                ) {
+                    inherited.takeoverPosition = lastPos;
+                }
+            }
+
+            delete creep.memory.attackerReserve;
+            delete creep.memory.replacementFor;
+            delete creep.memory.reserveSnapshot;
+            delete creep.memory.reserveWaitingLogged;
+
+            console.log(
+                "[ATTACKER] Резерв " + creep.name +
+                " активирован. Прежний стрелок: " + oldName
+            );
+        }
+
+
         // У каждого стрелка собственный набор координат.
         if (
             !creep.memory.attackerPositions ||
@@ -1107,6 +1460,8 @@ module.exports = {
         }
 
         const points = creep.memory.attackerPositions;
+
+        points.lastPos = getPositionData(creep.pos);
 
         // Однократно сбрасываем старый план,
         // чтобы заново дождаться остановки Keeper.
@@ -1687,6 +2042,28 @@ module.exports = {
             points.fire.y,
             points.fire.roomName
         );
+
+
+        // После замены сначала занимаем последнюю клетку
+        // предыдущего стрелка, затем продолжаем его фазу.
+        if (points.takeoverPosition) {
+            const takeoverPos = new RoomPosition(
+                points.takeoverPosition.x,
+                points.takeoverPosition.y,
+                points.takeoverPosition.roomName
+            );
+
+            if (!creep.pos.isEqualTo(takeoverPos)) {
+                creep.moveTo(takeoverPos, {
+                    range: 0,
+                    reusePath: 5
+                });
+
+                return;
+            }
+
+            delete points.takeoverPosition;
+        }
 
         // Начинаем с базы 1.
         if (!points.phase) {
