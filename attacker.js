@@ -76,6 +76,114 @@ function calculatePositionPlans(room) {
 }
 
 
+function findHealerBase2Positions(
+    room,
+    base1Pos,
+    base2Pos,
+    count,
+    reservedSpots = []
+) {
+    // Строим маршрут от базы 1 до базы 2.
+    const result = PathFinder.search(
+        base1Pos,
+        { pos: base2Pos, range: 0 },
+        {
+            maxRooms: 1,
+            plainCost: 1,
+            swampCost: 5
+        }
+    );
+
+    if (result.incomplete) {
+        return [];
+    }
+
+    const route = [
+        base1Pos,
+        ...result.path,
+        base2Pos
+    ];
+
+    const routeKeys = new Set(
+        route.map(pos => pos.x + "," + pos.y)
+    );
+
+    // Не используем позиции, уже назначенные у базы 1.
+    const reservedKeys = new Set(
+        reservedSpots.map(pos => pos.x + "," + pos.y)
+    );
+
+    const candidates = [];
+
+    // Ищем клетки вплотную к базе 2.
+    for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+            if (dx === 0 && dy === 0) {
+                continue;
+            }
+
+            const x = base2Pos.x + dx;
+            const y = base2Pos.y + dy;
+
+            if (x < 0 || x > 49 || y < 0 || y > 49) {
+                continue;
+            }
+
+            const key = x + "," + y;
+
+            // Не перекрываем путь стрелка и не повторяем
+            // позиции хиллеров у базы 1.
+            if (routeKeys.has(key) || reservedKeys.has(key)) {
+                continue;
+            }
+
+            const point = { x, y };
+
+            if (!isStandable(room, point)) {
+                continue;
+            }
+
+            // Не назначаем клетку, занятую другим крипом.
+            if (room.lookForAt(LOOK_CREEPS, x, y).length > 0) {
+                continue;
+            }
+
+            // Проверяем остальные объекты на клетке.
+            const objects = room.lookAt(x, y);
+
+            const blockedByObject = objects.some(object =>
+                object.type === "source" ||
+                object.type === "mineral" ||
+                object.type === "controller" ||
+                object.type === "deposit"
+            );
+
+            if (blockedByObject) {
+                continue;
+            }
+
+            candidates.push(new RoomPosition(x, y, room.name));
+        }
+    }
+
+    // Предпочитаем клетки, максимально удалённые от маршрута.
+    const distanceToRoute = pos =>
+        Math.min(...route.map(step =>
+            Math.max(
+                Math.abs(pos.x - step.x),
+                Math.abs(pos.y - step.y)
+            )
+        ));
+
+    candidates.sort((a, b) =>
+        distanceToRoute(b) - distanceToRoute(a)
+    );
+
+    return candidates
+        .slice(0, count)
+        .map(pos => getPositionData(pos));
+}
+
 
 function getPositionData(pos) {
     return {
@@ -721,37 +829,93 @@ module.exports = {
             creep.memory.healerSlot = slot;
         }
 
-        const spot = points.healerSpots[slot];
 
-        if (!spot) {
+        const base1Spot = points.healerSpots &&
+            points.healerSpots[slot];
+
+        const base2Spot = points.healerBase2Spots &&
+            points.healerBase2Spots[slot];
+
+        if (!base1Spot) {
             return;
         }
 
-        const healerPosition = new RoomPosition(
-            spot.x,
-            spot.y,
-            spot.roomName
+        // Если стрелок отступает на базу 2, ждём её позиции,
+        // если они пока не рассчитаны.
+        if (points.phase === "base2" && !base2Spot) {
+            if (!creep.memory.base2SpotWaitLogged) {
+                console.log(
+                    "[attacker healer " + creep.name +
+                    "] Жду расчёта позиции у базы 2."
+                );
+
+                creep.memory.base2SpotWaitLogged = true;
+            }
+
+            return;
+        }
+
+        delete creep.memory.base2SpotWaitLogged;
+
+        // Копируем обе позиции в личную память хиллера.
+        // При изменении плана обновляем сохранённые координаты.
+        const healerPositions = {
+            base1: {
+                x: base1Spot.x,
+                y: base1Spot.y,
+                roomName: base1Spot.roomName
+            },
+            base2: base2Spot ? {
+                x: base2Spot.x,
+                y: base2Spot.y,
+                roomName: base2Spot.roomName
+            } : null,
+            version: points.healerBase2RoutePlanVersion || 0
+        };
+
+        if (
+            JSON.stringify(creep.memory.healerPositions) !==
+            JSON.stringify(healerPositions)
+        ) {
+            creep.memory.healerPositions = healerPositions;
+        }
+
+        // На базе 2 стрелок отступил от огневой позиции.
+        // Во всех остальных фазах хиллер ждёт у базы 1.
+        const targetSpot =
+            points.phase === "base2"
+                ? creep.memory.healerPositions.base2
+                : creep.memory.healerPositions.base1;
+
+        if (!targetSpot) {
+            return;
+        }
+
+        const targetPos = new RoomPosition(
+            targetSpot.x,
+            targetSpot.y,
+            targetSpot.roomName
         );
 
-        // Сообщаем в лог, какую клетку занял хиллер.
-        const spotKey = spot.x + "," + spot.y;
+        const spotKey =
+            (points.phase === "base2" ? "base2 " : "base1 ") +
+            targetSpot.x + "," + targetSpot.y;
 
         if (creep.memory.reportedHealerSpot !== spotKey) {
             console.log(
                 "[attacker healer " + creep.name +
-                "] Назначена позиция H" + (slot + 1) +
-                ": " + spotKey
+                "] Назначена позиция: " + spotKey
             );
 
             creep.memory.reportedHealerSpot = spotKey;
         }
 
-        // Двигаемся к назначенной клетке.
-        if (!creep.pos.isEqualTo(healerPosition)) {
-            creep.moveTo(healerPosition, { reusePath: 20 });
+        // Двигаемся на позицию у текущей базы.
+        if (!creep.pos.isEqualTo(targetPos)) {
+            creep.moveTo(targetPos, { reusePath: 20 });
         }
 
-        // Лечим именно своего стрелка.
+        // Продолжаем лечить стрелка на маршруте или у базы.
         const range = creep.pos.getRangeTo(attacker);
 
         if (attacker.hits < attacker.hitsMax) {
@@ -761,6 +925,7 @@ module.exports = {
                 creep.rangedHeal(attacker);
             }
         }
+
     },
 
 
@@ -952,7 +1117,7 @@ module.exports = {
         }
 
 
-        
+
         // Рассчитываем места для двух хиллеров.
         // Учитываем оба маршрута стрелка.
         // Версия 2 нужна для обновления ранее сохранённых позиций.
@@ -1010,6 +1175,57 @@ module.exports = {
             }
         }
 
+
+        // Рассчитываем позиции хиллеров у базы 2.
+        // Версия 1 обозначает новый план размещения.
+        if (
+            points.healerBase2RoutePlanVersion !== 1 ||
+            !Array.isArray(points.healerBase2Spots) ||
+            points.healerBase2Spots.length < this.healerDesiredCount
+        ) {
+            const base1Position = new RoomPosition(
+                points.base.x,
+                points.base.y,
+                points.base.roomName
+            );
+
+            const base2Position = new RoomPosition(
+                points.base2.x,
+                points.base2.y,
+                points.base2.roomName
+            );
+
+            const spots = findHealerBase2Positions(
+                creep.room,
+                base1Position,
+                base2Position,
+                this.healerDesiredCount,
+                points.healerSpots || []
+            );
+
+            if (spots.length >= this.healerDesiredCount) {
+                points.healerBase2Spots = spots;
+                points.healerBase2RoutePlanVersion = 1;
+
+                delete points.healerBase2SpotErrorLogged;
+
+                console.log(
+                    "[attacker " + creep.name +
+                    "] Позиции хиллеров у базы 2: " +
+                    spots.map((p, i) =>
+                        "H" + (i + 1) + " " + p.x + "," + p.y
+                    ).join(" | ")
+                );
+            } else if (!points.healerBase2SpotErrorLogged) {
+                console.log(
+                    "[attacker " + creep.name +
+                    "] Не удалось найти две свободные позиции хиллеров у базы 2."
+                );
+
+                points.healerBase2SpotErrorLogged = true;
+            }
+        }
+
         // 7. Выводим лог только при изменении выбранного плана.
 
         const report = [
@@ -1024,8 +1240,8 @@ module.exports = {
             "направление баз: dx=" +
             points.baseDirection.dx +
             ", dy=" + points.baseDirection.dy +
-" | позиции хиллеров: " +
-(points.healerSpots
+            " | позиции хиллеров: " +
+            (points.healerSpots
                 ? points.healerSpots.map((p, i) =>
                     "H" + (i + 1) + " " + p.x + "," + p.y
                 ).join("; ")
