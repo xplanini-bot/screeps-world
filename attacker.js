@@ -1341,7 +1341,6 @@ module.exports = {
             attacker,
             ...Object.values(Game.creeps).filter(other =>
                 other.memory.role === this.healerRole &&
-                other.memory.targetRoom === this.targetRoom &&
                 !other.memory.healerReserve &&
                 !other.spawning &&
                 other.room.name === creep.room.name
