@@ -332,10 +332,10 @@ function findBasePair(room, firePos, originalDirection) {
 }
 
 
-function findHealerPositions(room, firePos, basePos, count) {
-    // Получаем маршрут, по которому стрелок может идти
-    // от огневой позиции до базы 1.
-    const result = PathFinder.search(
+
+function findHealerPositions(room, firePos, basePos, base2Pos, count) {
+    // Маршрут 1: огневая позиция -> база 1.
+    const firstPath = PathFinder.search(
         firePos,
         { pos: basePos, range: 0 },
         {
@@ -345,18 +345,41 @@ function findHealerPositions(room, firePos, basePos, count) {
         }
     );
 
-    if (result.incomplete) {
+    if (firstPath.incomplete) {
         return [];
     }
 
-    const route = [firePos, ...result.path, basePos];
+    // Маршрут 2: база 1 -> база 2.
+    const secondPath = PathFinder.search(
+        basePos,
+        { pos: base2Pos, range: 0 },
+        {
+            maxRooms: 1,
+            plainCost: 1,
+            swampCost: 5
+        }
+    );
+
+    if (secondPath.incomplete) {
+        return [];
+    }
+
+    // Объединяем оба маршрута.
+    const route = [
+        firePos,
+        ...firstPath.path,
+        basePos,
+        ...secondPath.path,
+        base2Pos
+    ];
+
     const routeKeys = new Set(
         route.map(pos => pos.x + "," + pos.y)
     );
 
     const candidates = [];
 
-    // Проверяем восемь соседних клеток вокруг базы 1.
+    // Ищем свободные клетки вокруг базы 1.
     for (let dx = -1; dx <= 1; dx++) {
         for (let dy = -1; dy <= 1; dy++) {
             if (dx === 0 && dy === 0) {
@@ -370,25 +393,22 @@ function findHealerPositions(room, firePos, basePos, count) {
                 continue;
             }
 
-            // Хиллер не должен стоять на маршруте стрелка.
+            // Не занимаем клетки ни одного маршрута.
             if (routeKeys.has(x + "," + y)) {
                 continue;
             }
 
             const point = { x, y };
 
-            // Отсекаем стены, болота и непроходимые структуры.
             if (!isStandable(room, point)) {
                 continue;
             }
 
-            // Не назначаем клетку, уже занятую другим крипом.
+            // Не занимаем клетку, на которой уже стоит крип.
             if (room.lookForAt(LOOK_CREEPS, x, y).length > 0) {
                 continue;
             }
 
-            // Не используем клетки источников, минералов
-            // или контроллера.
             const objects = room.lookAt(x, y);
 
             const hasObstacleObject = objects.some(object =>
@@ -406,8 +426,7 @@ function findHealerPositions(room, firePos, basePos, count) {
         }
     }
 
-    // Сначала выбираем клетки, максимально удалённые
-    // от маршрута, чтобы не мешать движению стрелка.
+    // Предпочитаем клетки подальше от обоих маршрутов.
     candidates.sort((a, b) => {
         const distanceToRoute = pos =>
             Math.min(...route.map(step =>
@@ -426,6 +445,7 @@ function findHealerPositions(room, firePos, basePos, count) {
 }
 
 
+
 module.exports = {
 
     role: "attacker",
@@ -435,7 +455,7 @@ module.exports = {
     healerDesiredCount: 2,
 
     // Пустая строка отключает создание стрелка.
-    targetRoom: "",
+    targetRoom: "E26N55",
     previewOnly: false,
 
     // Стрелок: 10 TOUGH, 8 MOVE, 5 RANGED_ATTACK.
@@ -763,6 +783,17 @@ module.exports = {
 
         const points = creep.memory.attackerPositions;
 
+
+        const previousHits = points.lastHits;
+
+        const tookDamage =
+            Number.isFinite(previousHits) &&
+            creep.hits < previousHits;
+
+        // Запоминаем здоровье для сравнения на следующем тике.
+        points.lastHits = creep.hits;
+
+
         // 1. Сначала отправляем стрелка в целевую комнату.
         if (creep.room.name !== this.targetRoom) {
             creep.moveTo(
@@ -921,10 +952,12 @@ module.exports = {
         }
 
 
+        
         // Рассчитываем места для двух хиллеров.
-        // Если двух подходящих клеток пока нет,
-        // повторим поиск на следующем тике.
+        // Учитываем оба маршрута стрелка.
+        // Версия 2 нужна для обновления ранее сохранённых позиций.
         if (
+            points.healerRoutePlanVersion !== 2 ||
             !Array.isArray(points.healerSpots) ||
             points.healerSpots.length < this.healerDesiredCount
         ) {
@@ -940,15 +973,24 @@ module.exports = {
                 points.base.roomName
             );
 
+            const base2Position = new RoomPosition(
+                points.base2.x,
+                points.base2.y,
+                points.base2.roomName
+            );
+
             const spots = findHealerPositions(
                 creep.room,
                 firePosition,
                 basePosition,
+                base2Position,
                 this.healerDesiredCount
             );
 
             if (spots.length >= this.healerDesiredCount) {
                 points.healerSpots = spots;
+                points.healerRoutePlanVersion = 2;
+
                 delete points.healerSpotErrorLogged;
 
                 console.log(
@@ -982,8 +1024,8 @@ module.exports = {
             "направление баз: dx=" +
             points.baseDirection.dx +
             ", dy=" + points.baseDirection.dy +
-            "позиции хиллеров: " +
-            (points.healerSpots
+" | позиции хиллеров: " +
+(points.healerSpots
                 ? points.healerSpots.map((p, i) =>
                     "H" + (i + 1) + " " + p.x + "," + p.y
                 ).join("; ")
@@ -999,18 +1041,242 @@ module.exports = {
 
 
 
-        // 8. Пока занимаем первую базу, а не огневую позицию.
-        const basePos = new RoomPosition(
+
+        const base1Pos = new RoomPosition(
             points.base.x,
             points.base.y,
             points.base.roomName
         );
 
-        if (!creep.pos.isEqualTo(basePos)) {
-            creep.moveTo(basePos, { reusePath: 20 });
+        const base2Pos = new RoomPosition(
+            points.base2.x,
+            points.base2.y,
+            points.base2.roomName
+        );
+
+        const firePos = new RoomPosition(
+            points.fire.x,
+            points.fire.y,
+            points.fire.roomName
+        );
+
+        // Начинаем с базы 1.
+        if (!points.phase) {
+            points.phase = "base1";
+
+            console.log(
+                "[attacker " + creep.name +
+                "] Начальная фаза: база 1."
+            );
         }
 
+        const changePhase = (nextPhase, reason) => {
+            if (points.phase === nextPhase) {
+                return;
+            }
+
+            const previousPhase = points.phase;
+            points.phase = nextPhase;
+
+            console.log(
+                "[attacker " + creep.name + "] Фаза: " +
+                previousPhase + " -> " + nextPhase +
+                ". Причина: " + reason
+            );
+        };
+
+        switch (points.phase) {
+
+            // --------------------------------------------------
+            // БАЗА 1
+            // --------------------------------------------------
+            case "base1": {
+
+                // Сначала обязательно занимаем базу 1.
+                if (!creep.pos.isEqualTo(base1Pos)) {
+                    creep.moveTo(base1Pos, { reusePath: 20 });
+                    return;
+                }
+
+                // Если на базе 1 здоровье уменьшилось,
+                // отходим дальше — на базу 2.
+                if (tookDamage) {
+                    changePhase(
+                        "base2",
+                        "на базе 1 получены повреждения"
+                    );
+
+                    creep.moveTo(base2Pos, { reusePath: 20 });
+                    return;
+                }
+
+                // На огневую позицию идём только с полным
+                // здоровьем и при отсутствии нового урона.
+                if (creep.hits === creep.hitsMax) {
+                    changePhase(
+                        "fire",
+                        "здоровье полностью восстановлено"
+                    );
+
+                    creep.moveTo(firePos, { reusePath: 20 });
+                    return;
+                }
+
+                // Пока восстанавливается — остаёмся на базе 1.
+                return;
+            }
+
+
+            // --------------------------------------------------
+            // БАЗА 2 — ДАЛЬНИЙ ОТХОД
+            // --------------------------------------------------
+            case "base2": {
+
+                if (!creep.pos.isEqualTo(base2Pos)) {
+                    creep.moveTo(base2Pos, { reusePath: 20 });
+                    return;
+                }
+
+                // Остаёмся здесь, пока здоровье не станет
+                // полным и повреждения не прекратятся.
+                if (
+                    creep.hits === creep.hitsMax &&
+                    !tookDamage
+                ) {
+                    changePhase(
+                        "fire",
+                        "на базе 2 восстановлено полное здоровье"
+                    );
+
+                    creep.moveTo(firePos, { reusePath: 20 });
+                    return;
+                }
+
+                return;
+            }
+
+
+            // --------------------------------------------------
+            // ВОЗВРАЩЕНИЕ НА БАЗУ 1 ПОСЛЕ БОЯ
+            // --------------------------------------------------
+            case "retreatBase1": {
+
+                if (!creep.pos.isEqualTo(base1Pos)) {
+                    creep.moveTo(base1Pos, { reusePath: 20 });
+                    return;
+                }
+
+                // Только после прибытия начинаем обычный
+                // контроль повреждений на базе 1.
+                changePhase(
+                    "base1",
+                    "стрелок достиг базы 1"
+                );
+
+                return;
+            }
+
+
+            // --------------------------------------------------
+            // ОГНЕВАЯ ПОЗИЦИЯ
+            // --------------------------------------------------
+            case "fire": {
+
+                // При здоровье ниже 50% немедленно возвращаемся
+                // на базу 1 к хиллерам.
+                if (creep.hits < creep.hitsMax * 0.5) {
+                    changePhase(
+                        "retreatBase1",
+                        "здоровье ниже 50%"
+                    );
+
+                    creep.moveTo(base1Pos, { reusePath: 20 });
+                    return;
+                }
+
+                // Удерживаем огневую позицию.
+                if (!creep.pos.isEqualTo(firePos)) {
+                    creep.moveTo(firePos, { reusePath: 20 });
+                    return;
+                }
+
+                // Пытаемся использовать сохранённую цель.
+                let keeper = points.keeperId
+                    ? Game.getObjectById(points.keeperId)
+                    : null;
+
+                // Если Keeper погиб и возродился с новым ID,
+                // ищем ближайшего к первоначальному посту.
+                if (
+                    !keeper ||
+                    !keeper.owner ||
+                    keeper.owner.username !== "Source Keeper"
+                ) {
+                    const keepers = creep.room.find(
+                        FIND_HOSTILE_CREEPS,
+                        {
+                            filter: hostile =>
+                                hostile.owner &&
+                                hostile.owner.username === "Source Keeper"
+                        }
+                    );
+
+                    const keeperAnchor = new RoomPosition(
+                        points.keeper.x,
+                        points.keeper.y,
+                        points.keeper.roomName
+                    );
+
+                    keeper = keeperAnchor.findClosestByRange(keepers);
+
+                    if (keeper) {
+                        points.keeperId = keeper.id;
+                    }
+                }
+
+                // Если защитник пока не появился,
+                // остаёмся на огневой позиции.
+                if (!keeper) {
+                    if (!points.noKeeperLogged) {
+                        console.log(
+                            "[attacker " + creep.name +
+                            "] Source Keeper не найден. Жду на огневой позиции."
+                        );
+
+                        points.noKeeperLogged = true;
+                    }
+
+                    return;
+                }
+
+                delete points.noKeeperLogged;
+
+                // Стреляем только в пределах дальности 3 клеток.
+                if (creep.pos.getRangeTo(keeper) <= 3) {
+                    creep.rangedAttack(keeper);
+                }
+
+                return;
+            }
+
+
+            // --------------------------------------------------
+            // НЕИЗВЕСТНОЕ СОСТОЯНИЕ
+            // --------------------------------------------------
+            default: {
+                points.phase = "base1";
+
+                console.log(
+                    "[attacker " + creep.name +
+                    "] Неизвестная фаза. Возвращаюсь к базе 1."
+                );
+
+                creep.moveTo(base1Pos, { reusePath: 20 });
+                return;
+            }
+        }
     },
+
 
 
 };
