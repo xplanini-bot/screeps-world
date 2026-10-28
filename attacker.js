@@ -188,9 +188,16 @@ function findHealerBase2Positions(
         }
     }
 
-    candidates.sort((a, b) =>
-        distanceToRoute(b) - distanceToRoute(a)
-    );
+    // Сначала выбираем клетки с меньшим историческим штрафом.
+    // При одинаковом штрафе предпочитаем клетки подальше от Keeper,
+    // затем — подальше от маршрута отступления.
+    candidates.sort((a, b) => {
+        return (
+            a.penalty - b.penalty ||
+            b.keeperRange - a.keeperRange ||
+            distanceToRoute(b.pos) - distanceToRoute(a.pos)
+        );
+    });
 
     return candidates
         .slice(0, count)
@@ -576,10 +583,10 @@ function findHealerFirePositions(
     positionHistory = {}
 ) {
     console.log(
-    "[ХИЛЛЕР DEBUG] Вызов функции. " +
-    "Тик: " + Game.time +
-    ", клеток в истории: " + Object.keys(positionHistory).length
-);
+        "[ХИЛЛЕР DEBUG] Вызов функции. " +
+        "Тик: " + Game.time +
+        ", клеток в истории: " + Object.keys(positionHistory).length
+    );
 
     const result = PathFinder.search(
         firePos,
@@ -704,22 +711,22 @@ function findHealerFirePositions(
             )
         ));
 
-        const penalized = candidates.filter(
-    candidate => candidate.penalty > 0
-);
-
-console.log(
-    "[ХИЛЛЕР DEBUG] Кандидатов: " + candidates.length +
-    ", со штрафом: " + penalized.length
-);
-
-for (const candidate of penalized) {
-    console.log(
-        "[ХИЛЛЕР DEBUG] Клетка " +
-        candidate.pos.x + "," + candidate.pos.y +
-        " — штраф " + candidate.penalty
+    const penalized = candidates.filter(
+        candidate => candidate.penalty > 0
     );
-}
+
+    console.log(
+        "[ХИЛЛЕР DEBUG] Кандидатов: " + candidates.length +
+        ", со штрафом: " + penalized.length
+    );
+
+    for (const candidate of penalized) {
+        console.log(
+            "[ХИЛЛЕР DEBUG] Клетка " +
+            candidate.pos.x + "," + candidate.pos.y +
+            " — штраф " + candidate.penalty
+        );
+    }
 
     // Высокий текущий радиус от Keeper повышает приоритет.
     // Исторически опасные клетки получают штраф.
@@ -1368,7 +1375,7 @@ module.exports = {
         );
 
         const spotKey =
-            (points.phase === "base2" ? "base2 " : "base1 ") +
+            targetMode + " " +
             targetSpot.x + "," + targetSpot.y;
 
         if (creep.memory.reportedHealerSpot !== spotKey) {
