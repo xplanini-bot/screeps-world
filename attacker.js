@@ -559,7 +559,8 @@ function findHealerFirePositions(
     base1Pos,
     keeperPos,
     count,
-    reservedSpots = []
+    reservedSpots = [],
+    positionHistory = {}
 ) {
     const result = PathFinder.search(
         firePos,
@@ -664,7 +665,13 @@ function findHealerFirePositions(
 
             if (hasObstacleObject) continue;
 
-            candidates.push(new RoomPosition(x, y, room.name));
+            const pos = new RoomPosition(x, y, room.name);
+
+            candidates.push({
+                pos,
+                keeperRange: keeperPos.getRangeTo(pos),
+                penalty: positionHistory[key] || 0
+            });
         }
     }
 
@@ -678,14 +685,22 @@ function findHealerFirePositions(
             )
         ));
 
-    candidates.sort((a, b) =>
-        keeperPos.getRangeTo(b) - keeperPos.getRangeTo(a) ||
-        distanceToRoute(b) - distanceToRoute(a)
-    );
+    // Высокий текущий радиус от Keeper повышает приоритет.
+    // Исторически опасные клетки получают штраф.
+    candidates.sort((a, b) => {
+        const scoreA = a.keeperRange - a.penalty * 1.25;
+        const scoreB = b.keeperRange - b.penalty * 1.25;
+
+        return (
+            scoreB - scoreA ||
+            a.penalty - b.penalty ||
+            distanceToRoute(b.pos) - distanceToRoute(a.pos)
+        );
+    });
 
     return candidates
         .slice(0, count)
-        .map(pos => getPositionData(pos));
+        .map(candidate => getPositionData(candidate.pos));
 }
 
 
@@ -1970,6 +1985,41 @@ module.exports = {
             points.healerFireSpots.length < this.healerDesiredCount ||
             points.healerFireThreatPosition !== keeperPositionKey
         ) {
+            // Запоминаем огневые клетки хиллеров,
+            // которые оказались в радиусе 3 от Keeper.
+            if (!points.healerFireSpotHistory) {
+                points.healerFireSpotHistory = {};
+            }
+
+            if (
+                liveKeeper &&
+                Array.isArray(points.healerFireSpots)
+            ) {
+                for (const spot of points.healerFireSpots) {
+                    const key = spot.x + "," + spot.y;
+                    const range = keeperPosition.getRangeTo(
+                        spot.x,
+                        spot.y
+                    );
+
+                    if (range <= 3) {
+                        const previousPenalty =
+                            points.healerFireSpotHistory[key] || 0;
+
+                        // Штраф накапливается, но ограничен двумя.
+                        points.healerFireSpotHistory[key] =
+                            Math.min(previousPenalty + 1, 2);
+
+                        if (previousPenalty === 0) {
+                            console.log(
+                                "[attacker " + creep.name +
+                                "] Клетка " + key +
+                                " запомнена как опасная для хиллеров."
+                            );
+                        }
+                    }
+                }
+            }
             delete points.healerFireSpots;
 
             const firePosition = new RoomPosition(
@@ -1995,7 +2045,8 @@ module.exports = {
                 base1Position,
                 keeperPosition,
                 this.healerDesiredCount,
-                reservedSpots
+                reservedSpots,
+                points.healerFireSpotHistory
             );
 
             if (spots.length >= this.healerDesiredCount) {
