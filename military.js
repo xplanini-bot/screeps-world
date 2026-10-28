@@ -24,7 +24,7 @@ module.exports = {
     emergencyAttacker: {
         role: "emergencyAttacker",
         desiredCount: 1,
-        body: [ATTACK, ATTACK, MOVE, MOVE]
+        body: [ATTACK, MOVE]
     },
 
     // Клетки, запрещённые для движения ближнего бойца
@@ -60,12 +60,22 @@ module.exports = {
     // Создание бойцов
     manageSpawning: function (spawn) {
 
-        // Проверяем строительные площадки в домашней комнате
+
+        // Проверяем строительные площадки в домашней комнате.
         const constructionSites = spawn.room.find(
             FIND_MY_CONSTRUCTION_SITES
         );
 
-        // Экстренный атакующий нужен только при наличии строительства
+        // Проверяем наличие врагов в домашней комнате.
+        const hostileCreeps = spawn.room.find(
+            FIND_HOSTILE_CREEPS
+        );
+
+        const hasEnemies = hostileCreeps.length > 0;
+        const hasConstruction = constructionSites.length > 0;
+
+        // Экстренный атакующий нужен при наличии врагов
+        // или строительных площадок.
         const attackers = Object.values(Game.creeps).filter(
             creep => creep.memory.role === this.emergencyAttacker.role
         );
@@ -73,7 +83,7 @@ module.exports = {
         const desiredCount = this.emergencyAttacker.desiredCount;
 
         // Проверяем, есть ли действующий атакующий,
-        // которому осталось 50 тиков или меньше
+        // которому осталось 50 тиков или меньше.
         const needsReplacement = attackers.some(
             creep =>
                 !creep.spawning &&
@@ -81,9 +91,10 @@ module.exports = {
                 creep.ticksToLive <= 50
         );
 
-        // Создаём атакующего только при наличии строительных площадок
+        const emergencyTrigger = hasEnemies || hasConstruction;
+
         const shouldSpawn =
-            constructionSites.length > 0 &&
+            emergencyTrigger &&
             (
                 attackers.length < desiredCount ||
                 (
@@ -93,6 +104,7 @@ module.exports = {
             );
 
         if (shouldSpawn && !spawn.spawning) {
+
 
             const name = "EmergencyAttacker_" + Game.time;
 
