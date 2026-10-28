@@ -4,18 +4,18 @@ module.exports = {
     role: "berserkMiner",
     desiredCount: 1,
 
-    targetRoom: "",
+    targetRoom: "E26N55",
 
     // Отступаем за 20 тиков до появления хранителя E26N55
     retreatBeforeSpawnTicks: 20,
 
     // Тело: 6 WORK + 6 MOVE
     body: [
-        WORK, WORK, WORK,
-        WORK, WORK, WORK,
+        WORK, WORK, WORK, WORK,
+        WORK, WORK, WORK, WORK,
 
-        MOVE, MOVE, MOVE,
-        MOVE, MOVE, MOVE
+        MOVE, MOVE, MOVE, MOVE,
+        MOVE, MOVE, MOVE, MOVE
     ],
 
     // Роль и количество перевозчиков
