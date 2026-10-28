@@ -699,7 +699,7 @@ module.exports = {
     healerDesiredCount: 2,
 
     // Пустая строка отключает создание стрелка.
-    targetRoom: "",
+    targetRoom: "E26N55",
     previewOnly: false,
 
     // Стрелок: 10 TOUGH, 8 MOVE, 5 RANGED_ATTACK.
@@ -1025,7 +1025,7 @@ module.exports = {
             creep.memory.healerPositions = healerPositions;
         }
 
-                // Выбираем позицию в зависимости от фазы стрелка.
+        // Выбираем позицию в зависимости от фазы стрелка.
         let targetSpot;
         let targetMode;
 
@@ -1108,6 +1108,39 @@ module.exports = {
 
         const points = creep.memory.attackerPositions;
 
+        // Однократно сбрасываем старый план,
+        // чтобы заново дождаться остановки Keeper.
+        if (points.keeperSettlementVersion !== 1) {
+            const fieldsToReset = [
+                "keeper",
+                "keeperId",
+                "keeperTracking",
+                "lair",
+                "lairId",
+                "sourceId",
+                "direction",
+                "fire",
+                "base",
+                "base2",
+                "baseDirection",
+                "basePlanVersion",
+                "healerSpots",
+                "healerRoutePlanVersion",
+                "healerBase2Spots",
+                "healerBase2RoutePlanVersion",
+                "healerFireSpots",
+                "healerFireRoutePlanVersion",
+                "healerFireThreatPosition",
+                "phase",
+                "reportedPlan"
+            ];
+
+            for (const field of fieldsToReset) {
+                delete points[field];
+            }
+
+            points.keeperSettlementVersion = 1;
+        }
 
         const previousHits = points.lastHits;
 
@@ -1128,33 +1161,167 @@ module.exports = {
             return;
         }
 
-        // 2. Выбираем ближайшего к самому стрелку Source Keeper.
-        // Его исходную позицию сохраняем как опорную.
+
+        // 2. Выбираем ближайшее логово к стрелку.
+        // Пока не знаем положение Keeper у шахты,
+        // поэтому огневую позицию не рассчитываем.
+        if (!points.lairId) {
+            const lairs = creep.room.find(FIND_STRUCTURES, {
+                filter: structure =>
+                    structure.structureType === STRUCTURE_KEEPER_LAIR
+            });
+
+            const lair = creep.pos.findClosestByRange(lairs);
+
+            if (!lair) {
+                if (!points.lairErrorLogged) {
+                    console.log(
+                        "[attacker " + creep.name +
+                        "] В комнате не найдено логово Source Keeper."
+                    );
+                    points.lairErrorLogged = true;
+                }
+                return;
+            }
+
+            points.lairId = lair.id;
+            points.lair = getPositionData(lair.pos);
+
+            console.log(
+                "[attacker " + creep.name +
+                "] Выбрано ближайшее логово: " +
+                lair.id + " (" +
+                lair.pos.x + "," + lair.pos.y + ")"
+            );
+        }
+
+        const lair = Game.getObjectById(points.lairId);
+
+        if (!lair || lair.structureType !== STRUCTURE_KEEPER_LAIR) {
+            delete points.lairId;
+            delete points.lair;
+            return;
+        }
+
+        points.lair = getPositionData(lair.pos);
+
+        // 3. Выбираем источник, который ближе всего к логову.
+        if (!points.sourceId) {
+            const sources = creep.room.find(FIND_SOURCES);
+            const source = lair.pos.findClosestByRange(sources);
+
+            if (!source) {
+                return;
+            }
+
+            points.sourceId = source.id;
+
+            console.log(
+                "[attacker " + creep.name +
+                "] Защищаемый источник: " +
+                source.id + " (" +
+                source.pos.x + "," + source.pos.y + ")"
+            );
+        }
+
+        const source = Game.getObjectById(points.sourceId);
+
+        if (!source) {
+            delete points.sourceId;
+            return;
+        }
+
+        // 4. Ждём Keeper именно выбранного логова.
+        // Его первое появление у логова ещё не означает,
+        // что он добрался до шахты.
         if (!points.keeper) {
+            const expectedKeeperName = "Keeper" + points.lairId;
+
             const keepers = creep.room.find(FIND_HOSTILE_CREEPS, {
                 filter: hostile =>
                     hostile.owner &&
                     hostile.owner.username === "Source Keeper"
             });
 
-            const keeper = creep.pos.findClosestByRange(keepers);
+            const keeper = keepers.find(
+                hostile => hostile.name === expectedKeeperName
+            );
 
             if (!keeper) {
                 if (!points.waitingForKeeperLogged) {
                     console.log(
                         "[attacker " + creep.name +
-                        "] В комнате нет видимого Source Keeper. Жду."
+                        "] Ожидаю Keeper " + expectedKeeperName
                     );
                     points.waitingForKeeperLogged = true;
                 }
                 return;
             }
 
+            points.keeperId = keeper.id;
+
+            // Считаем, сколько тиков Keeper стоит на одном месте.
+            const positionKey = keeper.pos.x + "," + keeper.pos.y;
+            const tracking = points.keeperTracking;
+
+            if (
+                !tracking ||
+                tracking.keeperId !== keeper.id ||
+                tracking.positionKey !== positionKey
+            ) {
+                points.keeperTracking = {
+                    keeperId: keeper.id,
+                    positionKey: positionKey,
+                    stableTicks: 1
+                };
+            } else {
+                tracking.stableTicks++;
+            }
+
+            // Keeper должен быть рядом с шахтой и оставаться
+            // на одной позиции минимум 3 последовательных тика.
+            const keeperAtMine =
+                keeper.pos.getRangeTo(source) <= 1;
+
+            const keeperSettled =
+                keeperAtMine &&
+                points.keeperTracking.stableTicks >= 5;
+
+            if (!keeperSettled) {
+                const message =
+                    "[attacker " + creep.name +
+                    "] Keeper движется к шахте: " +
+                    keeper.pos.x + "," + keeper.pos.y +
+                    ", расстояние до источника: " +
+                    keeper.pos.getRangeTo(source) +
+                    ", неподвижен тиков: " +
+                    points.keeperTracking.stableTicks;
+
+                if (points.lastKeeperTrackingLog !== message) {
+                    console.log(message);
+                    points.lastKeeperTrackingLog = message;
+                }
+
+                return;
+            }
+
+            // Только теперь окончательно фиксируем позицию Keeper.
             points.keeper = getPositionData(keeper.pos);
             points.keeperId = keeper.id;
-            points.waitingForKeeperLogged = false;
+
+            delete points.keeperTracking;
+            delete points.lastKeeperTrackingLog;
+            delete points.waitingForKeeperLogged;
+
+            console.log(
+                "[attacker " + creep.name +
+                "] Keeper добрался до шахты. Позиция зафиксирована: " +
+                keeper.pos.x + "," + keeper.pos.y +
+                ". Начинаю расчёт боевых позиций."
+            );
         }
 
+        // Используем только зафиксированную позицию.
         const keeperPos = new RoomPosition(
             points.keeper.x,
             points.keeper.y,
