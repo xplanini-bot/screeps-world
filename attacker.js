@@ -575,6 +575,12 @@ function findHealerFirePositions(
     reservedSpots = [],
     positionHistory = {}
 ) {
+    console.log(
+    "[ХИЛЛЕР DEBUG] Вызов функции. " +
+    "Тик: " + Game.time +
+    ", клеток в истории: " + Object.keys(positionHistory).length
+);
+
     const result = PathFinder.search(
         firePos,
         { pos: base1Pos, range: 0 },
@@ -697,6 +703,23 @@ function findHealerFirePositions(
                 Math.abs(pos.y - step.y)
             )
         ));
+
+        const penalized = candidates.filter(
+    candidate => candidate.penalty > 0
+);
+
+console.log(
+    "[ХИЛЛЕР DEBUG] Кандидатов: " + candidates.length +
+    ", со штрафом: " + penalized.length
+);
+
+for (const candidate of penalized) {
+    console.log(
+        "[ХИЛЛЕР DEBUG] Клетка " +
+        candidate.pos.x + "," + candidate.pos.y +
+        " — штраф " + candidate.penalty
+    );
+}
 
     // Высокий текущий радиус от Keeper повышает приоритет.
     // Исторически опасные клетки получают штраф.
