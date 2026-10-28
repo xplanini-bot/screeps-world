@@ -1263,7 +1263,7 @@ module.exports = {
             creep.memory.healerPositions = healerPositions;
         }
 
-        
+
         // После замены сначала занимаем прежнюю клетку хиллера.
         if (creep.memory.takeoverPosition) {
             const takeoverPos = new RoomPosition(
@@ -1334,16 +1334,53 @@ module.exports = {
             creep.moveTo(targetPos, { reusePath: 20 });
         }
 
-        // Продолжаем лечить стрелка на маршруте или у базы.
-        const range = creep.pos.getRangeTo(attacker);
 
-        if (attacker.hits < attacker.hitsMax) {
+        // Лечим себя, второго хиллера или стрелка.
+        // Выбираем наиболее повреждённого по проценту здоровья.
+        const healTargets = [
+            attacker,
+            ...Object.values(Game.creeps).filter(other =>
+                other.memory.role === this.healerRole &&
+                other.memory.targetRoom === this.targetRoom &&
+                !other.memory.healerReserve &&
+                !other.spawning &&
+                other.room.name === creep.room.name
+            )
+        ];
+
+        // Оставляем только повреждённых союзников
+        // в пределах дальности лечения.
+        const wounded = healTargets.filter(target =>
+            target &&
+            target.hits < target.hitsMax &&
+            creep.pos.getRangeTo(target) <= 3
+        );
+
+        // При одинаковом проценте здоровья:
+        // сначала лечим себя, затем стрелка, затем второго хиллера.
+        const healPriority = target => {
+            if (target.id === creep.id) return 0;
+            if (target.id === attacker.id) return 1;
+            return 2;
+        };
+
+        wounded.sort((a, b) =>
+            (a.hits / a.hitsMax) - (b.hits / b.hitsMax) ||
+            healPriority(a) - healPriority(b)
+        );
+
+        const target = wounded[0];
+
+        if (target) {
+            const range = creep.pos.getRangeTo(target);
+
             if (range <= 1) {
-                creep.heal(attacker);
-            } else if (range <= 3) {
-                creep.rangedHeal(attacker);
+                creep.heal(target);
+            } else {
+                creep.rangedHeal(target);
             }
         }
+
 
     },
 
