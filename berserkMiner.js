@@ -20,7 +20,7 @@ module.exports = {
 
     // Роль и количество перевозчиков
     carrierRole: "berserkCarrier",
-    carrierDesiredCount: 1,
+    carrierDesiredCount: 2,
 
     // Тело перевозчика: 10 CARRY + 10 MOVE
     carrierBody: [
