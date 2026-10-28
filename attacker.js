@@ -1002,7 +1002,7 @@ module.exports = {
         );
 
         // 3. Находим ближайшее к выбранному Keeper логово.
-        if (!points.lair) {
+        if (!points.lair || !points.lairId) {
             const lairs = creep.room.find(FIND_STRUCTURES, {
                 filter: structure =>
                     structure.structureType === STRUCTURE_KEEPER_LAIR
@@ -1022,6 +1022,7 @@ module.exports = {
             }
 
             points.lair = getPositionData(lair.pos);
+            points.lairId = lair.id;
             points.lairErrorLogged = false;
         }
 
@@ -1416,17 +1417,21 @@ module.exports = {
                     return;
                 }
 
-                // Пытаемся использовать сохранённую цель.
+
+                // Ищем Keeper именно того логова,
+                // которое выбрал наш стрелок.
+                const expectedKeeperName =
+                    "Keeper" + points.lairId;
+
                 let keeper = points.keeperId
                     ? Game.getObjectById(points.keeperId)
                     : null;
 
-                // Если Keeper погиб и возродился с новым ID,
-                // ищем ближайшего к первоначальному посту.
+                // Старый объект мог погибнуть.
+                // Проверяем, принадлежит ли он нужному логову.
                 if (
                     !keeper ||
-                    !keeper.owner ||
-                    keeper.owner.username !== "Source Keeper"
+                    keeper.name !== expectedKeeperName
                 ) {
                     const keepers = creep.room.find(
                         FIND_HOSTILE_CREEPS,
@@ -1437,42 +1442,95 @@ module.exports = {
                         }
                     );
 
-                    const keeperAnchor = new RoomPosition(
-                        points.keeper.x,
-                        points.keeper.y,
-                        points.keeper.roomName
+                    keeper = keepers.find(
+                        hostile =>
+                            hostile.name === expectedKeeperName
                     );
-
-                    keeper = keeperAnchor.findClosestByRange(keepers);
 
                     if (keeper) {
                         points.keeperId = keeper.id;
+                        delete points.noKeeperLogged;
+
+                        console.log(
+                            "[attacker " + creep.name +
+                            "] Найден новый Keeper: " +
+                            keeper.name + ", ID: " + keeper.id
+                        );
+                    } else {
+                        const visible = keepers.map(hostile =>
+                            hostile.name + " (" +
+                            hostile.pos.x + "," +
+                            hostile.pos.y + ")"
+                        ).join("; ");
+
+                        const message =
+                            "Ожидается " + expectedKeeperName +
+                            ". Видимые Keeper: " +
+                            (visible || "нет");
+
+                        if (points.lastKeeperSearchLog !== message) {
+                            console.log(
+                                "[attacker " + creep.name +
+                                "] " + message
+                            );
+
+                            points.lastKeeperSearchLog = message;
+                        }
+
+                        return;
                     }
                 }
 
-                // Если защитник пока не появился,
-                // остаёмся на огневой позиции.
-                if (!keeper) {
-                    if (!points.noKeeperLogged) {
+                delete points.lastKeeperSearchLog;
+
+                // Проверяем дальность до нового Keeper.
+                const range = creep.pos.getRangeTo(keeper);
+
+                if (range > 3) {
+                    const message =
+                        "Keeper " + keeper.name +
+                        " найден, но слишком далеко: " +
+                        range + " клеток. Огневая позиция: " +
+                        creep.pos.x + "," + creep.pos.y;
+
+                    if (points.lastRangeLog !== message) {
                         console.log(
                             "[attacker " + creep.name +
-                            "] Source Keeper не найден. Жду на огневой позиции."
+                            "] " + message
                         );
 
-                        points.noKeeperLogged = true;
+                        points.lastRangeLog = message;
                     }
 
                     return;
                 }
 
-                delete points.noKeeperLogged;
+                delete points.lastRangeLog;
 
-                // Стреляем только в пределах дальности 3 клеток.
-                if (creep.pos.getRangeTo(keeper) <= 3) {
-                    creep.rangedAttack(keeper);
+                // Стреляем по выбранному Keeper.
+                const attackResult = creep.rangedAttack(keeper);
+
+                if (attackResult !== OK) {
+                    const message =
+                        "Ошибка rangedAttack: " +
+                        attackResult +
+                        ", цель: " + keeper.name +
+                        ", дальность: " + range;
+
+                    if (points.lastAttackError !== message) {
+                        console.log(
+                            "[attacker " + creep.name +
+                            "] " + message
+                        );
+
+                        points.lastAttackError = message;
+                    }
+                } else {
+                    delete points.lastAttackError;
                 }
 
                 return;
+
             }
 
 

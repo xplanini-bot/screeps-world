@@ -31,107 +31,110 @@ module.exports = {
         MOVE, MOVE, MOVE, MOVE, MOVE
     ],
 
-    // Создание шахтёра и следующего за ним перевозчика
-    manageSpawning: function (spawn) {
-        if (!this.targetRoom || spawn.spawning) return;
+    
+manageSpawning: function (spawn) {
+    if (!this.targetRoom || !spawn || spawn.spawning) {
+        return;
+    }
 
-        const squadId = "attackerSquad_" + this.targetRoom;
+    const squadId = "attackerSquad_" + this.targetRoom;
+    const creeps = Object.values(Game.creeps);
 
-        const squadState =
-            Memory.attackerSquads &&
-            Memory.attackerSquads[squadId];
+    const miner = creeps.find(creep =>
+        creep.memory.role === this.role &&
+        creep.memory.targetRoom === this.targetRoom &&
+        creep.memory.squadId === squadId
+    );
 
-        // Ждём, пока боевой отряд определит логово
-        if (!squadState || !squadState.keeperLairId) {
-            return;
-        }
-
-        const creeps = Object.values(Game.creeps);
-
-        const miner = creeps.find(creep =>
-            creep.memory.role === this.role &&
-            creep.memory.targetRoom === this.targetRoom &&
-            creep.memory.squadId === squadId
-        );
-
-        // Этап 1: создаём шахтёра
-        if (!miner) {
-            const cost = this.body.reduce(
-                (total, part) => total + BODYPART_COST[part],
-                0
-            );
-
-            if (spawn.room.energyAvailable < cost) return;
-
-            const name = "BerserkMiner_" + Game.time;
-
-            const result = spawn.spawnCreep(
-                this.body,
-                name,
-                {
-                    memory: {
-                        role: this.role,
-                        targetRoom: this.targetRoom,
-                        homeRoomName: spawn.room.name,
-                        squadId: squadId,
-                        keeperLairId: squadState.keeperLairId,
-                        sourceId: null,
-                        minePosition: null,
-                        retreating: false,
-                        retreatPosition: null
-                    }
-                }
-            );
-
-            if (result === OK) {
-                console.log(
-                    "[БЕШЕНЫЙ ШАХТЁР] Создан: " + name
-                );
-            }
-
-            return;
-        }
-
-        // Этап 2: перевозчик создаётся только после шахтёра
-        // и при наличии домашнего Storage
-        if (!spawn.room.storage) return;
-
-        const carrierExists = creeps.some(creep =>
-            creep.memory.role === this.carrierRole &&
-            creep.memory.squadId === squadId
-        );
-
-        if (carrierExists) return;
-
-        const cost = this.carrierBody.reduce(
+    // Этап 1: создаём шахтёра.
+    // Он сам войдёт в целевую комнату и найдёт
+    // логово, выбранное боевым отрядом.
+    if (!miner) {
+        const cost = this.body.reduce(
             (total, part) => total + BODYPART_COST[part],
             0
         );
 
-        if (spawn.room.energyAvailable < cost) return;
+        if (spawn.room.energyAvailable < cost) {
+            return;
+        }
 
-        const name = "BerserkCarrier_" + Game.time;
+        const name = "BerserkMiner_" + Game.time;
 
         const result = spawn.spawnCreep(
-            this.carrierBody,
+            this.body,
             name,
             {
                 memory: {
-                    role: this.carrierRole,
+                    role: this.role,
                     targetRoom: this.targetRoom,
                     homeRoomName: spawn.room.name,
                     squadId: squadId,
-                    returningToStorage: false
+                    keeperLairId: null,
+                    sourceId: null,
+                    minePosition: null,
+                    retreating: false,
+                    retreatPosition: null
                 }
             }
         );
 
         if (result === OK) {
             console.log(
-                "[БЕШЕНЫЙ ШАХТЁР] Создан перевозчик: " + name
+                "[БЕШЕНЫЙ ШАХТЁР] Создан: " + name
             );
         }
-    },
+
+        return;
+    }
+
+    // Этап 2: перевозчик создаётся только после шахтёра
+    // и при наличии домашнего Storage.
+    if (!spawn.room.storage) {
+        return;
+    }
+
+    const carrierExists = creeps.some(creep =>
+        creep.memory.role === this.carrierRole &&
+        creep.memory.squadId === squadId
+    );
+
+    if (carrierExists) {
+        return;
+    }
+
+    const cost = this.carrierBody.reduce(
+        (total, part) => total + BODYPART_COST[part],
+        0
+    );
+
+    if (spawn.room.energyAvailable < cost) {
+        return;
+    }
+
+    const name = "BerserkCarrier_" + Game.time;
+
+    const result = spawn.spawnCreep(
+        this.carrierBody,
+        name,
+        {
+            memory: {
+                role: this.carrierRole,
+                targetRoom: this.targetRoom,
+                homeRoomName: spawn.room.name,
+                squadId: squadId,
+                returningToStorage: false
+            }
+        }
+    );
+
+    if (result === OK) {
+        console.log(
+            "[БЕШЕНЫЙ ШАХТЁР] Создан перевозчик: " + name
+        );
+    }
+},
+
 
     // Находим выход из комнаты в направлении дома
     getHomewardExit: function (creep, homeRoomName) {
@@ -353,23 +356,89 @@ module.exports = {
             return;
         }
 
-        const lair = Game.getObjectById(
-            creep.memory.keeperLairId
-        );
-
-        // Без известного логова шахтёр не начинает добычу
-        if (
-            !lair ||
-            lair.structureType !== STRUCTURE_KEEPER_LAIR
-        ) {
-            if (Game.time % 25 === 0) {
-                console.log(
-                    "[БЕШЕНЫЙ ШАХТЁР] Не найдено логово: " +
-                    creep.memory.keeperLairId
-                );
-            }
-            return;
+        
+        // При первом запуске новой логики сбрасываем старую
+        // привязку к шахте, полученную из прежнего Memory.attackerSquads.
+        if (!creep.memory.targetSelectionVersion) {
+            creep.memory.keeperLairId = null;
+            creep.memory.sourceId = null;
+            creep.memory.minePosition = null;
+            creep.memory.targetSelectionVersion = 1;
         }
+
+        let lair = creep.memory.keeperLairId
+            ? Game.getObjectById(creep.memory.keeperLairId)
+            : null;
+
+        // Если логово ещё не выбрано, читаем выбор стрелка.
+        if (!lair || lair.structureType !== STRUCTURE_KEEPER_LAIR) {
+            const attacker = Object.values(Game.creeps).find(other => {
+                if (
+                    other.spawning ||
+                    other.memory.role !== "attacker" ||
+                    other.room.name !== targetRoom
+                ) {
+                    return false;
+                }
+
+                const positions = other.memory.attackerPositions;
+
+                return (
+                    positions &&
+                    positions.roomName === targetRoom &&
+                    positions.lair &&
+                    positions.lair.roomName === targetRoom
+                );
+            });
+
+            // Ждём, пока стрелок выберет шахту.
+            if (!attacker) {
+                if (Game.time % 25 === 0) {
+                    console.log(
+                        "[БЕШЕНЫЙ ШАХТЁР] Ожидаю выбора шахты " +
+                        "боевым отрядом в " + targetRoom
+                    );
+                }
+
+                return;
+            }
+
+            const lairPosition =
+                attacker.memory.attackerPositions.lair;
+
+            const structures = creep.room.lookForAt(
+                LOOK_STRUCTURES,
+                lairPosition.x,
+                lairPosition.y
+            );
+
+            lair = structures.find(structure =>
+                structure.structureType === STRUCTURE_KEEPER_LAIR
+            );
+
+            if (!lair) {
+                if (Game.time % 25 === 0) {
+                    console.log(
+                        "[БЕШЕНЫЙ ШАХТЁР] Не найдено логово по координатам " +
+                        lairPosition.x + "," + lairPosition.y
+                    );
+                }
+
+                return;
+            }
+
+            // Запоминаем выбранное боевым отрядом логово.
+            creep.memory.keeperLairId = lair.id;
+            creep.memory.sourceId = null;
+            creep.memory.minePosition = null;
+
+            console.log(
+                "[БЕШЕНЫЙ ШАХТЁР] Выбрана шахта боевого отряда. " +
+                "Логово: " + lair.id +
+                ", координаты: " + lair.pos.x + "," + lair.pos.y
+            );
+        }
+
 
         // Назначаем источник рядом с выбранным логовом
         let source = creep.memory.sourceId
