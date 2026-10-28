@@ -175,6 +175,19 @@ function findHealerBase2Positions(
             )
         ));
 
+    // Раз в 25 тиков показываем клетки с историческим штрафом.
+    if (Game.time % 25 === 0) {
+        const penalized = candidates.filter(c => c.penalty > 0);
+
+        for (const candidate of penalized) {
+            console.log(
+                `[ХИЛЛЕР] Клетка ${candidate.pos.x},${candidate.pos.y}` +
+                ` — штраф ${candidate.penalty},` +
+                ` расстояние до Keeper: ${candidate.keeperRange}`
+            );
+        }
+    }
+
     candidates.sort((a, b) =>
         distanceToRoute(b) - distanceToRoute(a)
     );
