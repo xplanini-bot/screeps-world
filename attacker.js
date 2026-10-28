@@ -582,6 +582,7 @@ module.exports = {
     healerBody: [
         MOVE, HEAL,
         MOVE, HEAL,
+        MOVE, HEAL,
         MOVE, HEAL
     ],
 
