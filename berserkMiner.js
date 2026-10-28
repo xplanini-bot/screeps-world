@@ -94,12 +94,14 @@ module.exports = {
             return;
         }
 
-        const carrierExists = creeps.some(creep =>
+        const carrierCount = creeps.filter(creep =>
             creep.memory.role === this.carrierRole &&
             creep.memory.squadId === squadId
-        );
+        ).length;
 
-        if (carrierExists) {
+        // Если нужное количество перевозчиков уже есть,
+        // больше никого не создаём.
+        if (carrierCount >= this.carrierDesiredCount) {
             return;
         }
 
