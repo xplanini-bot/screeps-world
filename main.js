@@ -370,65 +370,90 @@ function deliverEnergy(creep, spawn, containers, site) {
 
 
 // Обычный добытчик
-
+// Обычный добытчик
 function runHarvester(creep, spawn, containers, site) {
+    const homeRoom = spawn.room;
+    const storage = homeRoom.storage;
+
+    // Если есть Storage, сначала восстанавливаем
+    // энергию в Spawn и Extensions.
+    if (storage) {
+        const spawnNeedsEnergy =
+            spawn.store.getFreeCapacity(RESOURCE_ENERGY) > 0;
+
+        const extensions = homeRoom.find(FIND_MY_STRUCTURES, {
+            filter: structure =>
+                structure.structureType === STRUCTURE_EXTENSION &&
+                structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+        });
+
+        const needsEnergy =
+            spawnNeedsEnergy || extensions.length > 0;
+
+        if (needsEnergy) {
+
+            // Если энергия уже есть у харвестера,
+            // сначала заполняем Spawn.
+            if (creep.store[RESOURCE_ENERGY] > 0) {
+                if (spawnNeedsEnergy) {
+                    const result = creep.transfer(
+                        spawn,
+                        RESOURCE_ENERGY
+                    );
+
+                    if (result === ERR_NOT_IN_RANGE) {
+                        creep.moveTo(spawn);
+                    }
+
+                    return;
+                }
+
+                // Spawn заполнен — пополняем ближайший Extension.
+                const extension =
+                    creep.pos.findClosestByRange(extensions);
+
+                if (extension) {
+                    const result = creep.transfer(
+                        extension,
+                        RESOURCE_ENERGY
+                    );
+
+                    if (result === ERR_NOT_IN_RANGE) {
+                        creep.moveTo(extension);
+                    }
+
+                    return;
+                }
+            }
+
+            // Если харвестер пуст, берём энергию из Storage.
+            if (
+                creep.store[RESOURCE_ENERGY] === 0 &&
+                storage.store[RESOURCE_ENERGY] > 0
+            ) {
+                const result = creep.withdraw(
+                    storage,
+                    RESOURCE_ENERGY
+                );
+
+                if (result === ERR_NOT_IN_RANGE) {
+                    creep.moveTo(storage, { range: 1 });
+                }
+
+                return;
+            }
+        }
+    }
+
+    // Если Storage отсутствует, пуст или Spawn и Extensions
+    // уже заполнены, используем прежнюю логику.
     updateWorkingState(creep);
 
-    const homeRoom = spawn.room;
-    const mineId = creep.memory.mineId;
-    const mineRoomName = creep.memory.mineRoomName || homeRoom.name;
-
-    // Если у добытчика ещё нет назначения
-    if (!mineId) {
-        console.log(
-            "[ДОБЫТЧИК] Нет назначения:",
-            creep.name
-        );
-        return;
-    }
-
-    // Режим добычи
     if (!creep.memory.working) {
-
-        // Добираемся до комнаты своей шахты
-        if (creep.room.name !== mineRoomName) {
-            creep.moveTo(
-                new RoomPosition(25, 25, mineRoomName),
-                { reusePath: 20 }
-            );
-            return;
-        }
-
-        // Получаем именно свой источник, а не ближайший
-        const source = Game.getObjectById(mineId);
-
-        if (!source) {
-            console.log(
-                "[ДОБЫТЧИК] Не найден источник:",
-                creep.name,
-                mineId,
-                "Комната:",
-                mineRoomName
-            );
-            return;
-        }
-
-        const result = creep.harvest(source);
-
-        if (result === ERR_NOT_IN_RANGE) {
-            creep.moveTo(source, { reusePath: 20 });
-        }
-
+        harvestEnergy(creep);
         return;
     }
 
-    // Режим доставки: возвращаемся на домашнюю базу
-    if (creep.room.name !== homeRoom.name) {
-        creep.moveTo(spawn, { reusePath: 20 });
-        return;
-    }
-
-    // Сдаём энергию на домашней базе
     deliverEnergy(creep, spawn, containers, site);
 }
 

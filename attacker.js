@@ -1766,7 +1766,7 @@ module.exports = {
             if (!keeperSettled) {
                 const message =
                     "[attacker " + creep.name +
-                    "] Keeper движется к шахте: " +
+                    "] Ожидаю стабилизации Keeper: " +
                     keeper.pos.x + "," + keeper.pos.y +
                     ", расстояние до источника: " +
                     keeper.pos.getRangeTo(source) +
@@ -1791,7 +1791,7 @@ module.exports = {
 
             console.log(
                 "[attacker " + creep.name +
-                "] Keeper добрался до шахты. Позиция зафиксирована: " +
+                "] Keeper стабилизировался. Позиция зафиксирована: " +
                 keeper.pos.x + "," + keeper.pos.y +
                 ". Начинаю расчёт боевых позиций."
             );
