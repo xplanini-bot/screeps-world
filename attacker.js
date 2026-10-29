@@ -1873,12 +1873,6 @@ module.exports = {
             }
         }
 
-        // Используем актуальную зафиксированную позицию Keeper.
-        const keeperPos = new RoomPosition(
-            points.keeper.x,
-            points.keeper.y,
-            points.keeper.roomName
-        );
 
         // Используем только зафиксированную позицию.
         const keeperPos = new RoomPosition(
