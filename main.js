@@ -10,11 +10,12 @@ const miner = require("miner");
 const builderModule = require("builder");
 //const combatMiner = require("combatMiner");
 
+const carrier = require("carrier");
 const berserkMiner = require("berserkMiner");
 
 // Количество необходимых ремонтников
 // const repairerCount = 1; теперь зависит от того есть ли что чинить (хотябы 1 контейнер)
-const DESIRED_CARRIERS = 2; // Перевозчик
+
 const MAX_TOWER_DELIVERY_CARRIERS = 0; // максимальное кол-во задействованных перевозчиков для доставки энергии к башне
 const TOWER_WALL_TARGET_HITS = 100000;
 
@@ -31,6 +32,11 @@ const REMOTE_ROOM = REMOTE_ROOMS[0]; // Временно для старых ф�
 
 const CREEP_BODY = [WORK, CARRY, MOVE];
 
+carrier.configure({
+    remoteRooms: REMOTE_ROOMS,
+    towerContainerIds: TOWER_CONTAINER_IDS
+});
+
 // Тело обслуживающего башню
 const TOWER_SUPPORT_BODY = [
     CARRY,
@@ -43,28 +49,6 @@ const TOWER_SUPPORT_BODY = [
 
 // Тело разведчика
 const SCOUT_BODY = [MOVE];
-
-// Тела перевозчиков по поколениям Extensions
-
-const CARRIER_BODY_Version_0 = [
-    CARRY, CARRY, CARRY, CARRY,
-    MOVE, MOVE
-];
-
-const CARRIER_BODY_Version_2 = [
-    CARRY, CARRY, CARRY, CARRY, CARRY,
-    MOVE, MOVE, MOVE
-];
-
-const CARRIER_BODY_Version_5 = [
-    CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY,
-    MOVE, MOVE, MOVE, MOVE
-];
-
-const CARRIER_BODY_Version_8 = [
-    CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY,
-    MOVE, MOVE, MOVE, MOVE, MOVE, MOVE, MOVE
-];
 
 // Создание крипов
 function manageSpawning(spawn) {
@@ -96,25 +80,6 @@ function manageSpawning(spawn) {
         }).length > 0;
     });
 
-    // Проверяем, построен ли Storage в домашней комнате
-    const hasStorage = spawn.room.find(FIND_MY_STRUCTURES, {
-        filter: structure =>
-            structure.structureType === STRUCTURE_STORAGE
-    }).length > 0;
-
-    // Проверяем наличие действующего шахтёра
-    const hasActiveMiner = creeps.some(creep =>
-        creep.memory.role === "miner" &&
-        !creep.spawning
-    );
-
-    // Определяем, разрешено ли создавать перевозчиков
-    const carrierCount = (
-        hasStorage ||
-        (hasContainers && hasActiveMiner)
-    )
-        ? DESIRED_CARRIERS
-        : 0;
 
     // До появления первого контейнера ремонтник не нужен
     const repairerCount = hasContainers ? 1 : 0;
@@ -163,21 +128,6 @@ function manageSpawning(spawn) {
     });
 
 
-    // Выбираем поколение перевозчика
-    let carrierBody;
-
-    // Если перевозчиков ещё нет — создаём базовую версию
-    if (countRole("carrier") === 0) {
-        carrierBody = CARRIER_BODY_Version_0;
-    } else if (extensions.length >= 8) {
-        carrierBody = CARRIER_BODY_Version_8;
-    } else if (extensions.length >= 5) {
-        carrierBody = CARRIER_BODY_Version_5;
-    } else if (extensions.length >= 2) {
-        carrierBody = CARRIER_BODY_Version_2;
-    } else {
-        carrierBody = CARRIER_BODY_Version_0;
-    }
 
 
     const allMines = calculateAllMineNeeds(spawn.room);
@@ -190,12 +140,7 @@ function manageSpawning(spawn) {
 
     // Приоритет создания
     const roles = [
-        {
-            role: "carrier",
-            desired: carrierCount,
-            prefix: "Carrier",
-            body: carrierBody
-        },
+
         {
             role: "harvester",
             desired: desiredHarvesters,
@@ -218,6 +163,11 @@ function manageSpawning(spawn) {
 
     // Передаём создание шахтёров модулю miner
     if (miner.manageSpawning(spawn, calculateAllMineNeeds)) {
+        return;
+    }
+
+    // Передаём создание перевозчиков модулю carrier
+    if (carrier.manageSpawning(spawn)) {
         return;
     }
 
@@ -456,85 +406,6 @@ function runHarvester(creep, spawn, containers, site) {
 
     deliverEnergy(creep, spawn, containers, site);
 }
-
-// Снимаем закрепление перевозчика за строителем
-function clearBuilderEnergyAssignment(carrier) {
-    const builderName = carrier.memory.builderDeliveryTarget;
-    const builder = builderName ? Game.creeps[builderName] : null;
-
-    if (
-        builder &&
-        builder.memory.energyDeliveryCarrier === carrier.name
-    ) {
-        delete builder.memory.energyDeliveryCarrier;
-    }
-
-    delete carrier.memory.builderDeliveryTarget;
-
-    releaseEnergyReservation(carrier);
-}
-
-// Обработка отдельного режима доставки строителю
-function runBuilderDeliveryMode(carrier, homeRoom) {
-    const builderName = carrier.memory.builderDeliveryTarget;
-    const builder = builderName ? Game.creeps[builderName] : null;
-
-    // Строитель погиб или больше не является строителем
-    if (!builder || builder.memory.role !== "builder") {
-        clearBuilderEnergyAssignment(carrier);
-        return false;
-    }
-
-    // Проверяем, остались ли строительные площадки
-    const roomNames = [homeRoom.name, ...REMOTE_ROOMS];
-
-    const hasConstructionSites = [...new Set(roomNames)].some(
-        roomName => {
-            const room = Game.rooms[roomName];
-
-            return room &&
-                room.find(FIND_MY_CONSTRUCTION_SITES).length > 0;
-        }
-    );
-
-    if (!hasConstructionSites) {
-        clearBuilderEnergyAssignment(carrier);
-        return false;
-    }
-
-    // Энергия закончилась — открепляемся и возвращаемся на базу
-    if (carrier.store[RESOURCE_ENERGY] === 0) {
-        clearBuilderEnergyAssignment(carrier);
-        carrier.memory.working = false;
-        carrier.memory.returningToBase = true;
-        return false;
-    }
-
-
-    // Доставляем энергию закреплённому строителю
-    const result = carrier.transfer(builder, RESOURCE_ENERGY);
-
-    if (result === ERR_NOT_IN_RANGE) {
-        carrier.moveTo(builder, {
-            range: 1,
-            reusePath: 20
-        });
-    } else if (result === ERR_INVALID_TARGET) {
-        clearBuilderEnergyAssignment(carrier);
-        return false;
-    }
-
-
-    // Если передача опустошила перевозчика, начинаем возвращение
-    if (carrier.store[RESOURCE_ENERGY] === 0) {
-        clearBuilderEnergyAssignment(carrier);
-        carrier.memory.working = false;
-        carrier.memory.returningToBase = true;
-    }
-
-    return true;
-}
-
 
 
 // Ремонтник: проверка контейнеров по очереди
@@ -1363,180 +1234,6 @@ function runTowerContainerDeliveryMode(creep, homeRoom) {
     return true;
 }
 
-// доставка энергии до контейнера контролера
-function runControllerContainerDeliveryMode(creep, homeRoom) {
-    const capacity = creep.store.getCapacity(RESOURCE_ENERGY);
-
-    let targetId = creep.memory.controllerDeliveryTargetId;
-
-    // Новый заказ выдаём только пустому перевозчику
-    if (!targetId) {
-        if (creep.store[RESOURCE_ENERGY] > 0) return false;
-
-        const controllerContainer =
-            advancedUpgrader.findControllerContainer(homeRoom);
-
-        if (!controllerContainer) return false;
-
-        const containerCapacity =
-            controllerContainer.store.getCapacity(RESOURCE_ENERGY);
-
-        const containerEnergy =
-            controllerContainer.store[RESOURCE_ENERGY] || 0;
-
-        // Контейнер должен содержать меньше половины энергии
-        if (containerEnergy >= containerCapacity / 2) return false;
-
-        // Не выдаём заказ, если контейнер уже закреплён за другим
-        const alreadyAssigned = Object.values(Game.creeps).some(other =>
-            other.name !== creep.name &&
-            other.memory.controllerDeliveryTargetId ===
-            controllerContainer.id
-        );
-
-        if (alreadyAssigned) return false;
-
-        // На полную загрузку должно хватать места в контейнере
-        const freeCapacity =
-            controllerContainer.store.getFreeCapacity(RESOURCE_ENERGY);
-
-        if (freeCapacity < capacity) return false;
-
-        // Домашний Storage — единственный источник энергии
-        const storage = homeRoom.find(FIND_MY_STRUCTURES, {
-            filter: structure =>
-                structure.structureType === STRUCTURE_STORAGE
-        })[0];
-
-        if (!storage) return false;
-
-        // Не начинаем новую доставку, если запас меньше 20 000
-        const storageEnergy =
-            storage.store[RESOURCE_ENERGY] || 0;
-
-        if (storageEnergy < 20000) return false;
-
-        const reserved = getReservedEnergy(storage.id, creep.name);
-
-        const availableEnergy =
-            storage.store[RESOURCE_ENERGY] - reserved;
-
-        // Проверяем, хватает ли энергии на полную загрузку
-        if (availableEnergy < capacity) return false;
-
-        // Закрепляем заказ за перевозчиком
-        targetId = controllerContainer.id;
-
-        creep.memory.controllerDeliveryTargetId =
-            controllerContainer.id;
-
-        creep.memory.controllerDeliverySourceId =
-            storage.id;
-
-        creep.memory.controllerDeliveryAmount = capacity;
-
-        reserveEnergy(creep, storage, capacity);
-    }
-
-    const target = Game.getObjectById(
-        creep.memory.controllerDeliveryTargetId
-    );
-
-    const storage = Game.getObjectById(
-        creep.memory.controllerDeliverySourceId
-    );
-
-    const amount = creep.memory.controllerDeliveryAmount;
-
-    // Проверяем, что заказ всё ещё действителен
-    if (
-        !target ||
-        !storage ||
-        !Number.isFinite(amount)
-    ) {
-        releaseEnergyReservation(creep);
-        delete creep.memory.controllerDeliveryTargetId;
-        delete creep.memory.controllerDeliverySourceId;
-        delete creep.memory.controllerDeliveryAmount;
-        return false;
-    }
-
-    // Фаза 1: забираем полную загрузку из Storage
-    if (creep.store[RESOURCE_ENERGY] === 0) {
-        if (storage.store[RESOURCE_ENERGY] < amount) {
-            releaseEnergyReservation(creep);
-            delete creep.memory.controllerDeliveryTargetId;
-            delete creep.memory.controllerDeliverySourceId;
-            delete creep.memory.controllerDeliveryAmount;
-            return false;
-        }
-
-        const result = creep.withdraw(
-            storage,
-            RESOURCE_ENERGY,
-            amount
-        );
-
-        if (result === ERR_NOT_IN_RANGE) {
-            creep.moveTo(storage, { range: 1, reusePath: 20 });
-        } else if (result === OK) {
-            releaseEnergyReservation(creep);
-        } else if (
-            result === ERR_NOT_ENOUGH_RESOURCES ||
-            result === ERR_INVALID_TARGET
-        ) {
-            releaseEnergyReservation(creep);
-            delete creep.memory.controllerDeliveryTargetId;
-            delete creep.memory.controllerDeliverySourceId;
-            delete creep.memory.controllerDeliveryAmount;
-            return false;
-        }
-
-        return true;
-    }
-
-    // Не смешиваем заказ с другой загрузкой
-    if (creep.store[RESOURCE_ENERGY] !== amount) {
-        releaseEnergyReservation(creep);
-        delete creep.memory.controllerDeliveryTargetId;
-        delete creep.memory.controllerDeliverySourceId;
-        delete creep.memory.controllerDeliveryAmount;
-        return false;
-    }
-
-    // Ждём, если контейнер пока не может принять весь груз
-    if (
-        target.store.getFreeCapacity(RESOURCE_ENERGY) < amount
-    ) {
-        return true;
-    }
-
-    // Фаза 2: доставляем полную загрузку
-    const result = creep.transfer(
-        target,
-        RESOURCE_ENERGY,
-        amount
-    );
-
-    if (result === ERR_NOT_IN_RANGE) {
-        creep.moveTo(target, { range: 1, reusePath: 20 });
-    } else if (result === OK) {
-        delete creep.memory.controllerDeliveryTargetId;
-        delete creep.memory.controllerDeliverySourceId;
-        delete creep.memory.controllerDeliveryAmount;
-        creep.memory.returningToBase = true;
-    } else if (result === ERR_INVALID_TARGET) {
-        releaseEnergyReservation(creep);
-        delete creep.memory.controllerDeliveryTargetId;
-        delete creep.memory.controllerDeliverySourceId;
-        delete creep.memory.controllerDeliveryAmount;
-        return false;
-    }
-
-    return true;
-}
-
-
 // Проверить, назначен ли приёмник другому перевозчику
 function isDeliveryTargetAssigned(targetId, creepName) {
     return Object.values(Game.creeps).some(other =>
@@ -1544,6 +1241,7 @@ function isDeliveryTargetAssigned(targetId, creepName) {
         other.memory.deliveryTargetId === targetId
     );
 }
+
 // Зарезервировать энергию в выбранном контейнере
 function reserveEnergy(creep, container, amount) {
     creep.memory.energyReservationTargetId = container.id;
@@ -1556,459 +1254,6 @@ function releaseEnergyReservation(creep) {
     delete creep.memory.energyReservationAmount;
 }
 
-// Поведение перевозчика
-function runCarrier(creep, spawn, homeRoom) {
-
-
-    // Возвращение на базу после доставки
-    if (creep.memory.returningToBase) {
-        if (creep.pos.isNearTo(spawn)) {
-            delete creep.memory.returningToBase;
-
-            // Освобождаем слот башни после возвращения
-            delete creep.memory.towerDeliveryActive;
-        } else {
-            creep.moveTo(spawn, {
-                range: 1,
-                reusePath: 20
-            });
-            return;
-        }
-    }
-
-
-    const energy = creep.store[RESOURCE_ENERGY];
-    const capacity = creep.store.getCapacity(RESOURCE_ENERGY);
-    const freeCapacity = creep.store.getFreeCapacity(RESOURCE_ENERGY);
-
-    // Контейнер контроллера можно пополнять,
-    // только если в Storage не менее 20 000 энергии
-    const storageEnergy = homeRoom.storage
-        ? homeRoom.storage.store[RESOURCE_ENERGY] || 0
-        : 0;
-
-    const controllerContainer =
-        advancedUpgrader.findControllerContainer(homeRoom);
-
-    const canFillControllerContainer =
-        !!controllerContainer && storageEnergy >= 20000;
-
-    const releaseReservation = () => {
-        releaseEnergyReservation(creep);
-    };
-
-    // Полный перевозчик переключается на доставку
-    if (freeCapacity === 0) {
-        creep.memory.working = true;
-    }
-
-    if (creep.store[RESOURCE_ENERGY] === 0) {
-        creep.memory.working = false;
-    }
-
-    // Если перевозчик уже закреплён за строителем,
-    // сначала продолжаем специальную доставку
-    if (creep.memory.builderDeliveryTarget) {
-        const handled = runBuilderDeliveryMode(
-            creep,
-            homeRoom
-        );
-
-        if (handled) return;
-    }
-    // Специальный режим доставки энергии в контейнер башни
-    if (runTowerContainerDeliveryMode(creep, homeRoom)) {
-        return;
-    }
-
-    // Специальный режим доставки энергии в контейнер контроллера
-    if (runControllerContainerDeliveryMode(creep, homeRoom)) {
-        return;
-    }
-
-    // РЕЖИМ ДОСТАВКИ
-    if (creep.memory.working) {
-        releaseReservation();
-
-        let target = null;
-
-        // Если цель уже назначена этому перевозчику,
-        // продолжаем доставку именно туда
-        if (creep.memory.deliveryTargetId) {
-            target = Game.getObjectById(
-                creep.memory.deliveryTargetId
-            );
-
-            // Освобождаем назначение, если цель исчезла
-            // или уже не нуждается в энергии
-            if (
-                !target ||
-                target.store.getFreeCapacity(RESOURCE_ENERGY) === 0
-            ) {
-                delete creep.memory.deliveryTargetId;
-                target = null;
-            }
-        }
-
-        // Приоритет 1: Spawn
-        if (
-            !target &&
-            spawn.store.getFreeCapacity(RESOURCE_ENERGY) > 0 &&
-            !isDeliveryTargetAssigned(spawn.id, creep.name)
-        ) {
-            target = spawn;
-        }
-
-        // Приоритет 2: свободный Extension
-        if (!target) {
-            const extensions = homeRoom.find(FIND_MY_STRUCTURES, {
-                filter: structure =>
-                    structure.structureType === STRUCTURE_EXTENSION &&
-                    structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0 &&
-                    !isDeliveryTargetAssigned(
-                        structure.id,
-                        creep.name
-                    )
-            });
-
-            if (extensions.length > 0) {
-                target = extensions[0];
-            }
-        }
-
-        // Приоритет 3: Строитель из очереди
-        if (!target) {
-            const assignedBuilder =
-                builderModule.claimBuilderEnergyRequest(creep);
-
-            if (assignedBuilder) {
-                runBuilderDeliveryMode(creep, homeRoom);
-                return;
-            }
-        }
-
-        // Приоритет 4: Storage
-        if (
-            !target
-        ) {
-            target = homeRoom.find(FIND_MY_STRUCTURES, {
-                filter: structure =>
-                    structure.structureType === STRUCTURE_STORAGE &&
-                    structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-            })[0];
-        }
-
-        // Приоритет 5: контейнер возле контроллера
-        const storageEnergy = homeRoom.storage
-            ? homeRoom.storage.store[RESOURCE_ENERGY] || 0
-            : 0;
-
-        if (!target && storageEnergy >= 20000) {
-            const controllerContainer =
-                advancedUpgrader.findControllerContainer(homeRoom);
-
-            if (controllerContainer) {
-                const capacity =
-                    controllerContainer.store.getCapacity(RESOURCE_ENERGY);
-
-                const energy =
-                    controllerContainer.store[RESOURCE_ENERGY] || 0;
-
-                const incomingEnergy = Object.values(Game.creeps)
-                    .filter(other =>
-                        other.name !== creep.name &&
-                        other.memory.deliveryTargetId === controllerContainer.id
-                    )
-                    .reduce(
-                        (sum, other) =>
-                            sum + other.store[RESOURCE_ENERGY],
-                        0
-                    );
-
-                if (
-                    energy + incomingEnergy < capacity / 2 &&
-                    !isDeliveryTargetAssigned(
-                        controllerContainer.id,
-                        creep.name
-                    )
-                ) {
-                    target = controllerContainer;
-                }
-            }
-        }
-
-        if (target) {
-            // Закрепляем цель за перевозчиком
-            creep.memory.deliveryTargetId = target.id;
-
-            const result = creep.transfer(
-                target,
-                RESOURCE_ENERGY
-            );
-
-            if (result === ERR_NOT_IN_RANGE) {
-                creep.moveTo(target, { reusePath: 20 });
-            } else if (
-                result === OK ||
-                result === ERR_FULL ||
-                result === ERR_INVALID_TARGET
-            ) {
-                delete creep.memory.deliveryTargetId;
-            }
-
-            return;
-        }
-
-
-
-        // Все приёмники заполнены
-        // Если запас энергии меньше половины — отправляемся пополняться
-        if (energy < capacity / 2) {
-            creep.memory.working = false;
-        } else {
-            // Иначе возвращаемся к спавну и ждём
-            const spawnPos = spawn.pos;
-
-            if (creep.pos.getRangeTo(spawnPos) > 3) {
-                creep.moveTo(spawnPos, { reusePath: 20 });
-            }
-
-            return;
-        }
-    }
-
-
-    // РЕЖИМ ПОИСКА ЭНЕРГИИ
-
-    // ПРИОРИТЕТ: подобрать энергию после погибших крипов
-    if (creep.store[RESOURCE_ENERGY] < capacity / 2) {
-
-        // Освобождаем резерв контейнера:
-        // теперь сначала проверяем оставленные ресурсы
-        releaseReservation();
-
-        const recoveryRoomNames = [
-            creep.room.name,
-            homeRoom.name,
-            ...REMOTE_ROOMS
-        ];
-
-        let recoveryTarget = null;
-        let recoveryType = null;
-
-        for (const roomName of [...new Set(recoveryRoomNames)]) {
-            const room = Game.rooms[roomName];
-
-            // Проверяем только видимые комнаты
-            if (!room) continue;
-
-
-            // Сначала проверяем могилы погибших крипов
-            const tombstones = room.find(FIND_TOMBSTONES, {
-                filter: tombstone =>
-                    tombstone.store[RESOURCE_ENERGY] > 0
-            });
-
-            if (tombstones.length > 0) {
-                const availableTombstones = tombstones.filter(tombstone =>
-                    !Object.values(Game.creeps).some(other =>
-                        other.name !== creep.name &&
-                        other.memory.recoveryTargetId === tombstone.id
-                    )
-                );
-
-                if (availableTombstones.length > 0) {
-                    recoveryTarget = availableTombstones[0];
-                    recoveryType = "tombstone";
-                    creep.memory.recoveryTargetId = recoveryTarget.id;
-                    break;
-                }
-            }
-
-
-            // Затем проверяем энергию, выпавшую на землю
-            const droppedResources = room.find(
-                FIND_DROPPED_RESOURCES,
-                {
-                    filter: resource =>
-                        resource.resourceType === RESOURCE_ENERGY
-                }
-            );
-
-            if (droppedResources.length > 0) {
-                const availableDrops = droppedResources.filter(resource =>
-                    !Object.values(Game.creeps).some(other =>
-                        other.name !== creep.name &&
-                        other.memory.recoveryTargetId === resource.id
-                    )
-                );
-
-                if (availableDrops.length > 0) {
-                    recoveryTarget = availableDrops[0];
-                    recoveryType = "dropped";
-                    creep.memory.recoveryTargetId = recoveryTarget.id;
-                    break;
-                }
-            }
-        }
-
-        // Если нашли оставленную энергию — забираем её
-        if (recoveryTarget) {
-            let result;
-
-            if (recoveryType === "tombstone") {
-                result = creep.withdraw(
-                    recoveryTarget,
-                    RESOURCE_ENERGY
-                );
-            } else {
-                result = creep.pickup(recoveryTarget);
-            }
-
-            if (result === ERR_NOT_IN_RANGE) {
-                creep.moveTo(recoveryTarget, {
-                    range: 1,
-                    reusePath: 20
-                });
-            } else if (
-                result === OK ||
-                result === ERR_NOT_ENOUGH_RESOURCES ||
-                result === ERR_INVALID_TARGET
-            ) {
-                delete creep.memory.recoveryTargetId;
-            }
-
-            // В этом тике контейнеры не проверяем
-            return;
-        }
-    }
-
-    // Если энергии уже половина или больше, новую не забираем
-    if (creep.store[RESOURCE_ENERGY] >= capacity / 2) {
-        releaseReservation();
-        creep.memory.working = true;
-        return;
-    }
-
-    const roomNames = [
-        ...REMOTE_ROOMS,
-        homeRoom.name
-    ];
-
-    let container = creep.memory.energyReservationTargetId
-        ? Game.getObjectById(
-            creep.memory.energyReservationTargetId
-        )
-        : null;
-    // Если цель исчезла, освобождаем резерв
-    if (!container) {
-        releaseReservation();
-    }
-
-    // Сбрасываем старый резерв, если это контейнер контроллера
-    if (
-        container &&
-        container.structureType === STRUCTURE_CONTAINER
-    ) {
-        const controllerContainer =
-            advancedUpgrader.findControllerContainer(container.room);
-
-        if (
-            controllerContainer &&
-            controllerContainer.id === container.id
-        ) {
-            releaseReservation();
-            container = null;
-        }
-    }
-
-    // Если контейнер уже выбран, продолжаем путь к нему
-    if (container) {
-        const result = creep.withdraw(
-            container,
-            RESOURCE_ENERGY
-        );
-
-        if (result === ERR_NOT_IN_RANGE) {
-            creep.moveTo(container, { reusePath: 20 });
-        } else if (
-            result === OK ||
-            result === ERR_NOT_ENOUGH_RESOURCES ||
-            result === ERR_INVALID_TARGET
-        ) {
-            releaseReservation();
-        }
-
-        return;
-    }
-
-    // Ищем контейнер с учётом общих резервов
-    const neededEnergy = freeCapacity;
-
-    // Проверяем, нуждается ли база в энергии
-    const spawnNeedsEnergy =
-        spawn.store.getFreeCapacity(RESOURCE_ENERGY) > 0;
-
-    const extensionsNeedEnergy = homeRoom.find(
-        FIND_MY_STRUCTURES,
-        {
-            filter: structure =>
-                structure.structureType === STRUCTURE_EXTENSION &&
-                structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-        }
-    ).length > 0;
-
-    // Storage используем как резерв, только если базе нужна энергия
-    const builderWaiting =
-        Array.isArray(Memory.builderEnergyQueue) &&
-        Memory.builderEnergyQueue.length > 0;
-
-    const allowStorage =
-        spawnNeedsEnergy ||
-        extensionsNeedEnergy ||
-        builderWaiting;
-    container = findEnergyContainer(
-        creep,
-        roomNames,
-        neededEnergy,
-        allowStorage,
-        builderWaiting
-    );
-
-    if (!container) return;
-
-    const reserved = getReservedEnergy(
-        container.id,
-        creep.name
-    );
-
-    const available =
-        container.store[RESOURCE_ENERGY] - reserved;
-
-    reserveEnergy(
-        creep,
-        container,
-        Math.min(neededEnergy, available)
-    );
-
-    const result = creep.withdraw(
-        container,
-        RESOURCE_ENERGY
-    );
-
-    if (result === ERR_NOT_IN_RANGE) {
-        creep.moveTo(container, { reusePath: 20 });
-    } else if (
-        result === OK ||
-        result === ERR_NOT_ENOUGH_RESOURCES ||
-        result === ERR_INVALID_TARGET
-    ) {
-        releaseReservation();
-    }
-
-
-    // Нет контейнера с достаточным доступным запасом
-}
 
 // Установка контейнеров у источников
 function manageContainerConstruction(room) {
@@ -3225,9 +2470,16 @@ module.exports.loop = function () {
         if (creep.memory.role === "scout") {
             runScout(creep);
         }
+
         if (creep.memory.role === "carrier") {
-            runCarrier(creep, spawn, homeRoom);
+            carrier.run(creep, spawn, homeRoom, {
+                findEnergyContainer,
+                getReservedEnergy,
+                reserveEnergy,
+                releaseEnergyReservation
+            });
         }
+
         if (creep.memory.role === "towerSupport") {
             runTowerSupport(creep, spawn);
         }

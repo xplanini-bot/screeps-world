@@ -206,6 +206,87 @@ function claimBuilderEnergyRequest(carrier) {
     return null;
 }
 
+
+function clearBuilderEnergyAssignment(carrier, helpers) {
+    const builderName = carrier.memory.builderDeliveryTarget;
+    const builder = builderName ? Game.creeps[builderName] : null;
+
+    if (
+        builder &&
+        builder.memory.energyDeliveryCarrier === carrier.name
+    ) {
+        delete builder.memory.energyDeliveryCarrier;
+    }
+
+    delete carrier.memory.builderDeliveryTarget;
+
+    helpers.releaseEnergyReservation(carrier);
+}
+
+// Обработка отдельного режима доставки строителю
+function runBuilderDeliveryMode(
+    carrier,
+    homeRoom,
+    remoteRooms,
+    helpers
+) {
+    const builderName = carrier.memory.builderDeliveryTarget;
+    const builder = builderName ? Game.creeps[builderName] : null;
+
+    // Строитель погиб или больше не является строителем
+    if (!builder || builder.memory.role !== "builder") {
+        clearBuilderEnergyAssignment(carrier, helpers);
+        return false;
+    }
+
+    // Проверяем, остались ли строительные площадки
+    const roomNames = [homeRoom.name, ...remoteRooms];
+
+    const hasConstructionSites = [...new Set(roomNames)].some(
+        roomName => {
+            const room = Game.rooms[roomName];
+
+            return room &&
+                room.find(FIND_MY_CONSTRUCTION_SITES).length > 0;
+        }
+    );
+
+    if (!hasConstructionSites) {
+       clearBuilderEnergyAssignment(carrier, helpers);
+        return false;
+    }
+
+    // Энергия закончилась — открепляемся и возвращаемся на базу
+    if (carrier.store[RESOURCE_ENERGY] === 0) {
+        clearBuilderEnergyAssignment(carrier, helpers);
+        carrier.memory.working = false;
+        carrier.memory.returningToBase = true;
+        return false;
+    }
+
+    // Доставляем энергию закреплённому строителю
+    const result = carrier.transfer(builder, RESOURCE_ENERGY);
+
+    if (result === ERR_NOT_IN_RANGE) {
+        carrier.moveTo(builder, {
+            range: 1,
+            reusePath: 20
+        });
+    } else if (result === ERR_INVALID_TARGET) {
+       clearBuilderEnergyAssignment(carrier, helpers);
+        return false;
+    }
+
+    // Если передача опустошила перевозчика, начинаем возвращение
+    if (carrier.store[RESOURCE_ENERGY] === 0) {
+        clearBuilderEnergyAssignment(carrier, helpers);
+        carrier.memory.working = false;
+        carrier.memory.returningToBase = true;
+    }
+
+    return true;
+}
+
 module.exports = {
 
     role: "builder",
@@ -233,6 +314,8 @@ module.exports = {
     removeBuilderEnergyRequest: removeBuilderEnergyRequest,
     requestBuilderEnergy: requestBuilderEnergy,
     claimBuilderEnergyRequest: claimBuilderEnergyRequest,
+    clearBuilderEnergyAssignment: clearBuilderEnergyAssignment,
+    runBuilderDeliveryMode: runBuilderDeliveryMode,
 
     // Поведение строителя
     run: function (creep, homeRoom, remoteRooms, helpers) {
