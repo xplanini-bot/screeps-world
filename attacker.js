@@ -4,7 +4,7 @@ function calculatePositionPlans(room) {
     const keepers = room.find(FIND_HOSTILE_CREEPS, {
         filter: hostile =>
             hostile.owner &&
-            hostile.owner.username === "Source Keeper"
+            hostile.owner.username === "Invader"
     });
 
     if (keepers.length === 0) {
@@ -575,6 +575,183 @@ function findHealerFirePositions(
         .map(candidate => getPositionData(candidate.pos));
 }
 
+function updateHostileSquadRetreatTimer(targetRoomName) {
+    const now = Game.time;
+    let timer = Memory.attackerSquadRetreatTimer;
+
+    // Переходим на новую версию таймера.
+    if (timer && timer.version !== 3) {
+        delete Memory.attackerSquadRetreatTimer;
+        timer = null;
+    }
+
+    // Список Invader, для которых таймер уже завершился.
+    const ignored =
+        Memory.attackerSquadRetreatIgnoredInvaders || {};
+
+    const room = targetRoomName
+        ? Game.rooms[targetRoomName]
+        : null;
+
+    let invaders = [];
+
+    if (room) {
+        // Ищем всех Invader во всей целевой комнате.
+        // Координаты, расположение у шахт и состав группы
+        // значения не имеют.
+        invaders = room.find(FIND_HOSTILE_CREEPS, {
+            filter: hostile =>
+                hostile.owner &&
+                hostile.owner.username === "Invader"
+        });
+
+        // Удаляем из списка игнорирования тех Invader,
+        // которых больше нет в видимой комнате.
+        const currentNames = new Set(
+            invaders.map(creep => creep.name)
+        );
+
+        for (const name of Object.keys(ignored)) {
+            if (!currentNames.has(name)) {
+                delete ignored[name];
+            }
+        }
+
+        if (Object.keys(ignored).length > 0) {
+            Memory.attackerSquadRetreatIgnoredInvaders = ignored;
+        } else {
+            delete Memory.attackerSquadRetreatIgnoredInvaders;
+        }
+    }
+
+    // Таймер завершился: разрешаем обычную работу.
+    // Уже учтённых Invader временно игнорируем,
+    // чтобы не запускать тот же таймер повторно.
+    if (timer && timer.until <= now) {
+        for (const name of timer.invaderNames || []) {
+            ignored[name] = true;
+        }
+
+        Memory.attackerSquadRetreatIgnoredInvaders = ignored;
+
+        delete Memory.attackerSquadRetreatTimer;
+        timer = null;
+
+        console.log(
+            "[ATTACKER] Таймер угрозы завершён. " +
+            "Обычная работа отряда разрешена."
+        );
+    }
+
+    // Находим Invader, для которых ещё не завершался таймер.
+    const newInvaders = invaders.filter(
+        creep => !ignored[creep.name]
+    );
+
+    // Один новый Invader — достаточно для отступления.
+    if (newInvaders.length > 0) {
+        const getTTL = creep =>
+            Number.isFinite(creep.ticksToLive)
+                ? creep.ticksToLive
+                : 1500;
+
+        // Рассчитываем максимальное время жизни всех
+        // обнаруженных Invader в комнате.
+        const maxTTL = Math.max(
+            ...invaders.map(getTTL)
+        );
+
+        const proposedUntil = now + maxTTL;
+
+        const knownNames = new Set([
+            ...(timer ? timer.invaderNames || [] : []),
+            ...invaders.map(creep => creep.name)
+        ]);
+
+        const until = Math.max(
+            timer ? timer.until : 0,
+            proposedUntil
+        );
+
+        const shouldStartOrExtend =
+            !timer || until > timer.until;
+
+        if (shouldStartOrExtend) {
+            timer = {
+                version: 3,
+                detectedAt: timer ? timer.detectedAt : now,
+                until,
+                duration: until - now,
+                roomName: targetRoomName,
+                invaderNames: [...knownNames]
+            };
+
+            Memory.attackerSquadRetreatTimer = timer;
+
+            console.log(
+                "[ATTACKER] ОБНАРУЖЕН INVADER! " +
+                "Всего в комнате: " + invaders.length +
+                ", новые: " + newInvaders.length +
+                ", максимальный TTL: " +
+                (until - now) +
+                " тиков. Отступаем домой."
+            );
+        } else {
+            // Запоминаем дополнительные имена, обнаруженные
+            // во время уже действующего таймера.
+            timer.invaderNames = [...knownNames];
+            timer.duration = timer.until - now;
+
+            Memory.attackerSquadRetreatTimer = timer;
+        }
+    }
+
+    // Таймер продолжает действовать, даже если целевая
+    // комната временно не видна.
+    return timer || null;
+}
+
+// Отправляем юнита в центральную область домашней комнаты.
+function retreatCreepToHomeCenter(creep, timer, label) {
+    const homeSpawn = Game.spawns["Spawn1"];
+
+    const homeRoomName =
+        creep.memory.homeRoomName ||
+        (homeSpawn && homeSpawn.room.name);
+
+    if (homeRoomName) {
+        const homeCenter = new RoomPosition(
+            25,
+            25,
+            homeRoomName
+        );
+
+        // Достаточно находиться в пределах двух клеток
+        // от центра, чтобы не застрять на непроходимой клетке.
+        if (
+            creep.room.name !== homeRoomName ||
+            creep.pos.getRangeTo(homeCenter) > 2
+        ) {
+            creep.moveTo(homeCenter, {
+                range: 2,
+                reusePath: 10
+            });
+        }
+    }
+
+    if (!creep.memory.hostileSquadRetreatLogged) {
+        console.log(
+            "[ATTACKER] " + label + " " + creep.name +
+            " отступает в центр домашней комнаты. " +
+            "До окончания ожидания: " +
+            Math.max(0, timer.until - Game.time) +
+            " тиков."
+        );
+
+        creep.memory.hostileSquadRetreatLogged = true;
+    }
+}
+
 
 
 module.exports = {
@@ -715,6 +892,23 @@ module.exports = {
 
             return;
 
+        }
+
+        // Пока действует аварийный таймер, новых юнитов не создаём.
+        const threatTimer =
+            updateHostileSquadRetreatTimer(this.targetRoom);
+
+        if (threatTimer) {
+            if (Game.time % 25 === 0) {
+                console.log(
+                    "[ATTACKER] Создание стрелков и хиллеров запрещено. " +
+                    "Осталось ждать: " +
+                    Math.max(0, threatTimer.until - Game.time) +
+                    " тиков."
+                );
+            }
+
+            return;
         }
 
 
@@ -932,44 +1126,82 @@ module.exports = {
             return;
         }
 
+        const threatTimer =
+            updateHostileSquadRetreatTimer(this.targetRoom);
 
+        if (threatTimer) {
+            retreatCreepToHomeCenter(
+                creep,
+                threatTimer,
+                "Хиллер"
+            );
 
-        // Резервный хиллер только движется в целевую комнату
-        // и обновляет снимок состояния старого хиллера.
+            return;
+        }
+
+        delete creep.memory.hostileSquadRetreatLogged;
+
+        // Резервный хиллер ждёт смерти старого,
+        // находясь рядом с базой.
         if (creep.memory.healerReserve) {
             const oldName = creep.memory.replacementFor;
             const oldHealer = oldName && Game.creeps[oldName];
 
             if (oldHealer) {
+                // Запоминаем номер старого хиллера.
                 creep.memory.reserveSnapshot = {
-                    healerSlot: oldHealer.memory.healerSlot,
-                    healerPositions: JSON.parse(
-                        JSON.stringify(
-                            oldHealer.memory.healerPositions || {}
-                        )
-                    ),
-                    lastPos: getPositionData(oldHealer.pos)
+                    healerSlot: oldHealer.memory.healerSlot
                 };
 
+                // Находим действующего стрелка.
+                const attacker = Object.values(Game.creeps).find(c =>
+                    c.memory.role === this.role &&
+                    !c.memory.attackerReserve
+                );
+
+                const points =
+                    attacker && attacker.memory.attackerPositions;
+
+                const base = points && points.base;
+
                 if (creep.room.name !== this.targetRoom) {
+                    // Сначала входим в целевую комнату.
                     creep.moveTo(
                         new RoomPosition(25, 25, this.targetRoom),
                         { reusePath: 20 }
                     );
-                } else if (!creep.memory.reserveWaitingLogged) {
-                    console.log(
-                        "[ATTACKER] Резервный хиллер " + creep.name +
-                        " прибыл в комнату и ожидает смерти " +
-                        oldHealer.name
+                } else if (
+                    base &&
+                    base.roomName === this.targetRoom
+                ) {
+                    // Идём к базе, но не занимаем клетку стрелка.
+                    const basePos = new RoomPosition(
+                        base.x,
+                        base.y,
+                        base.roomName
                     );
 
-                    creep.memory.reserveWaitingLogged = true;
+                    if (creep.pos.getRangeTo(basePos) > 1) {
+                        creep.moveTo(basePos, {
+                            range: 1,
+                            reusePath: 5
+                        });
+                    } else if (!creep.memory.reserveWaitingLogged) {
+                        console.log(
+                            "[ATTACKER] Резервный хиллер " +
+                            creep.name +
+                            " находится у базы и ожидает смерти " +
+                            oldHealer.name
+                        );
+
+                        creep.memory.reserveWaitingLogged = true;
+                    }
                 }
 
                 return;
             }
 
-            // Старый хиллер умер. Дожидаемся целевой комнаты.
+            // Старый хиллер погиб. Резерв начинает обычную работу.
             if (creep.room.name !== this.targetRoom) {
                 creep.moveTo(
                     new RoomPosition(25, 25, this.targetRoom),
@@ -982,36 +1214,17 @@ module.exports = {
             const oldMemory =
                 Memory.creeps && Memory.creeps[oldName];
 
-            const oldPositions =
-                snapshot.healerPositions ||
-                (oldMemory && oldMemory.healerPositions);
-
-            const oldSlot =
-                Number.isInteger(snapshot.healerSlot)
-                    ? snapshot.healerSlot
-                    : oldMemory && oldMemory.healerSlot;
-
-            const lastPos =
-                snapshot.lastPos ||
-                (oldMemory && oldMemory.lastPos) ||
-                null;
+            const oldSlot = Number.isInteger(snapshot.healerSlot)
+                ? snapshot.healerSlot
+                : oldMemory && oldMemory.healerSlot;
 
             if (Number.isInteger(oldSlot)) {
                 creep.memory.healerSlot = oldSlot;
             }
 
-            if (oldPositions) {
-                creep.memory.healerPositions = JSON.parse(
-                    JSON.stringify(oldPositions)
-                );
-            }
-
-            if (
-                lastPos &&
-                lastPos.roomName === this.targetRoom
-            ) {
-                creep.memory.takeoverPosition = lastPos;
-            }
+            // Не занимаем последнюю клетку погибшего хиллера.
+            delete creep.memory.takeoverPosition;
+            delete creep.memory.healerPositions;
 
             delete creep.memory.healerReserve;
             delete creep.memory.replacementFor;
@@ -1249,6 +1462,22 @@ module.exports = {
             return;
         }
 
+        const threatTimer =
+            updateHostileSquadRetreatTimer(this.targetRoom);
+
+        if (threatTimer) {
+            retreatCreepToHomeCenter(
+                creep,
+                threatTimer,
+                creep.memory.attackerReserve
+                    ? "Резервный стрелок"
+                    : "Стрелок"
+            );
+
+            return;
+        }
+
+        delete creep.memory.hostileSquadRetreatLogged;
 
         // Резервный стрелок только идёт в целевую комнату
         // и копирует состояние действующего стрелка.
@@ -1261,28 +1490,48 @@ module.exports = {
                 const oldPoints =
                     oldAttacker.memory.attackerPositions;
 
+                // Постоянно обновляем план действующего стрелка.
                 if (oldPoints) {
                     creep.memory.reserveSnapshot = {
                         attackerPositions: JSON.parse(
                             JSON.stringify(oldPoints)
-                        ),
-                        lastPos: getPositionData(oldAttacker.pos)
+                        )
                     };
                 }
 
-                if (creep.room.name !== this.targetRoom) {
+                // Если база уже рассчитана, направляем резерв к ней.
+                if (
+                    oldPoints &&
+                    oldPoints.base &&
+                    oldPoints.base.roomName === this.targetRoom
+                ) {
+                    const basePos = new RoomPosition(
+                        oldPoints.base.x,
+                        oldPoints.base.y,
+                        oldPoints.base.roomName
+                    );
+
+                    // Ждём рядом с базой, не занимая её.
+                    if (creep.pos.getRangeTo(basePos) > 1) {
+                        creep.moveTo(basePos, {
+                            range: 1,
+                            reusePath: 5
+                        });
+                    } else if (!creep.memory.reserveWaitingLogged) {
+                        console.log(
+                            "[ATTACKER] Резерв " + creep.name +
+                            " прибыл к базе и ожидает смерти " +
+                            oldAttacker.name
+                        );
+
+                        creep.memory.reserveWaitingLogged = true;
+                    }
+                } else if (creep.room.name !== this.targetRoom) {
+                    // Если план базы ещё не рассчитан, входим в целевую комнату.
                     creep.moveTo(
                         new RoomPosition(25, 25, this.targetRoom),
                         { reusePath: 20 }
                     );
-                } else if (!creep.memory.reserveWaitingLogged) {
-                    console.log(
-                        "[ATTACKER] Резерв " + creep.name +
-                        " прибыл в комнату и ожидает смерти " +
-                        oldAttacker.name
-                    );
-
-                    creep.memory.reserveWaitingLogged = true;
                 }
 
                 return;
@@ -1298,7 +1547,7 @@ module.exports = {
                 return;
             }
 
-            // Используем последнее сохранённое состояние.
+            // Используем последний сохранённый план старого стрелка.
             const snapshot = creep.memory.reserveSnapshot || {};
             const oldMemory =
                 Memory.creeps && Memory.creeps[oldName];
@@ -1307,11 +1556,6 @@ module.exports = {
                 snapshot.attackerPositions ||
                 (oldMemory && oldMemory.attackerPositions);
 
-            const lastPos =
-                snapshot.lastPos ||
-                (savedPoints && savedPoints.lastPos) ||
-                null;
-
             if (savedPoints) {
                 creep.memory.attackerPositions = JSON.parse(
                     JSON.stringify(savedPoints)
@@ -1319,13 +1563,11 @@ module.exports = {
 
                 const inherited = creep.memory.attackerPositions;
 
+                // Новый стрелок всегда начинает с единственной базы.
+                inherited.phase = "base";
 
-                if (
-                    lastPos &&
-                    lastPos.roomName === this.targetRoom
-                ) {
-                    inherited.takeoverPosition = lastPos;
-                }
+                // Больше не занимаем последнюю позицию погибшего.
+                delete inherited.takeoverPosition;
             }
 
             delete creep.memory.attackerReserve;
@@ -1558,6 +1800,86 @@ module.exports = {
             );
         }
 
+        // После первоначальной фиксации отслеживаем Keeper каждый тик.
+        const expectedKeeperName = "Keeper" + points.lairId;
+
+        let currentKeeper = points.keeperId
+            ? Game.getObjectById(points.keeperId)
+            : null;
+
+        // Если старый объект исчез, например после гибели Keeper,
+        // ищем нового Keeper того же логова.
+        if (
+            !currentKeeper ||
+            currentKeeper.name !== expectedKeeperName
+        ) {
+            const keepers = creep.room.find(FIND_HOSTILE_CREEPS, {
+                filter: hostile =>
+                    hostile.owner &&
+                    hostile.owner.username === "Source Keeper"
+            });
+
+            currentKeeper = keepers.find(
+                hostile => hostile.name === expectedKeeperName
+            ) || null;
+        }
+
+        if (
+            currentKeeper &&
+            currentKeeper.room.name === this.targetRoom
+        ) {
+            points.keeperId = currentKeeper.id;
+
+            const previousKey =
+                points.keeper.x + "," + points.keeper.y;
+
+            const currentKey =
+                currentKeeper.pos.x + "," + currentKeeper.pos.y;
+
+            // Реальное перемещение Keeper обнаружено.
+            if (previousKey !== currentKey) {
+                console.log(
+                    "[attacker " + creep.name +
+                    "] Keeper переместился: " +
+                    previousKey + " -> " + currentKey +
+                    ". Пересчитываю боевые позиции."
+                );
+
+                // Сохраняем новые координаты без ожидания.
+                points.keeper = getPositionData(currentKeeper.pos);
+
+                // Старые позиции стрелка больше не актуальны.
+                delete points.direction;
+                delete points.fire;
+                delete points.base;
+                delete points.baseDirection;
+
+                // Пересчитываем позиции хиллеров у базы.
+                delete points.healerSpots;
+                delete points.healerRoutePlanVersion;
+
+                // Удаляем остатки старого плана второй базы,
+                // если они ещё есть в памяти.
+                delete points.healerBase2Spots;
+                delete points.healerBase2RoutePlanVersion;
+
+                // Принудительно пересчитываем позиции хиллеров
+                // возле новой огневой позиции.
+                delete points.healerFireRoutePlanVersion;
+                delete points.healerFireThreatPosition;
+
+                // Отчёт о плане нужно сформировать заново.
+                delete points.reportedPlan;
+            }
+        }
+
+        // Используем актуальную зафиксированную позицию Keeper.
+        const keeperPos = new RoomPosition(
+            points.keeper.x,
+            points.keeper.y,
+            points.keeper.roomName
+        );
+
         // Используем только зафиксированную позицию.
         const keeperPos = new RoomPosition(
             points.keeper.x,
@@ -1712,7 +2034,7 @@ module.exports = {
                 points.base.roomName
             );
 
-            
+
 
             const spots = findHealerPositions(
                 creep.room,
@@ -1820,8 +2142,8 @@ module.exports = {
             );
 
             const reservedSpots = [
-    ...(points.healerSpots || [])
-];
+                ...(points.healerSpots || [])
+            ];
 
             const spots = findHealerFirePositions(
                 creep.room,
@@ -1867,9 +2189,9 @@ module.exports = {
             points.fire.x + "," + points.fire.y,
             "база: " +
             points.base.x + "," + points.base.y,
-           "направление: dx=" +
-direction.dx + ", dy=" + direction.dy +
-" | хиллеры у огневой позиции: " +
+            "направление: dx=" +
+            direction.dx + ", dy=" + direction.dy +
+            " | хиллеры у огневой позиции: " +
             (points.healerFireSpots
                 ? points.healerFireSpots.map((p, i) =>
                     "H" + (i + 1) + " " + p.x + "," + p.y
@@ -1905,27 +2227,6 @@ direction.dx + ", dy=" + direction.dy +
             points.fire.roomName
         );
 
-
-        // После замены сначала занимаем последнюю клетку
-        // предыдущего стрелка, затем продолжаем его фазу.
-        if (points.takeoverPosition) {
-            const takeoverPos = new RoomPosition(
-                points.takeoverPosition.x,
-                points.takeoverPosition.y,
-                points.takeoverPosition.roomName
-            );
-
-            if (!creep.pos.isEqualTo(takeoverPos)) {
-                creep.moveTo(takeoverPos, {
-                    range: 0,
-                    reusePath: 5
-                });
-
-                return;
-            }
-
-            delete points.takeoverPosition;
-        }
 
         // Начинаем с базы 1.
         if (!points.phase) {
@@ -1986,12 +2287,22 @@ direction.dx + ", dy=" + direction.dy +
             // --------------------------------------------------
             case "fire": {
 
-                // При здоровье ниже 50% немедленно возвращаемся
-                // на базу 1 к хиллерам.
-                if (creep.hits < creep.hitsMax * 0.5) {
+                // Проверяем, создан ли резерв именно для этого стрелка.
+                const hasReserve = Object.values(Game.creeps).some(other =>
+                    other.memory.role === this.role &&
+                    other.memory.attackerReserve &&
+                    other.memory.replacementFor === creep.name
+                );
+
+                // Пока резерва нет, отступаем при здоровье ниже 50%.
+                // После создания резерва продолжаем бой до гибели.
+                if (
+                    !hasReserve &&
+                    creep.hits < creep.hitsMax * 0.5
+                ) {
                     changePhase(
                         "base",
-                        "здоровье ниже 50%"
+                        "здоровье ниже 50%, резерв ещё не создан"
                     );
 
                     creep.moveTo(basePos, { reusePath: 20 });
