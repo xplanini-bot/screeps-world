@@ -1757,14 +1757,11 @@ module.exports = {
                 tracking.stableTicks++;
             }
 
-            // Keeper должен быть рядом с шахтой и оставаться
-            // на одной позиции минимум 3 последовательных тика.
-            const keeperAtMine =
-                keeper.pos.getRangeTo(source) <= 1;
-
+            // При первоначальном расчёте не требуем,
+            // чтобы Keeper дошёл до шахты.
+            // Достаточно оставаться на одной позиции 10 тиков.
             const keeperSettled =
-                keeperAtMine &&
-                points.keeperTracking.stableTicks >= 5;
+                points.keeperTracking.stableTicks >= 10;
 
             if (!keeperSettled) {
                 const message =
