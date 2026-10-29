@@ -1874,7 +1874,7 @@ module.exports = {
         }
 
 
-        // Используем только зафиксированную позицию.
+        // Используем только зафиксированную позицию
         const keeperPos = new RoomPosition(
             points.keeper.x,
             points.keeper.y,
