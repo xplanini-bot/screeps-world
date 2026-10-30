@@ -5,7 +5,7 @@ const TOWERS = [
         energyThreshold: 0.70
     },
     {
-        id: "ID_ВТОРОЙ_БАШНИ",
+        id: "6ae4ee5810bbc95d4e374f88",
         energyThreshold: 0.70
     }
 ];
