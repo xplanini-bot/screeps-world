@@ -262,5 +262,6 @@ function runTowerDefense(room) {
 module.exports = {
     runTowerDefense,
     manageCarrierAssignment,
-    runCarrierDefenseMode
+    runCarrierDefenseMode,
+    TOWERS
 };

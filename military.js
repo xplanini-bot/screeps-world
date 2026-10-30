@@ -92,7 +92,12 @@ module.exports = {
                 creep.ticksToLive <= 50
         );
 
-        const emergencyTrigger = hasEnemies || hasConstruction;
+        // если есть вражеские юниты или строительная площадка создаём экстренного атакующего только в том случае если нет оборонительной башни
+        const hasTowerAssigned = towerSpawnDefense.TOWERS.length > 0;
+
+        const emergencyTrigger =
+            (hasEnemies || hasConstruction) &&
+            !hasTowerAssigned;
 
         const shouldSpawn =
             emergencyTrigger &&
