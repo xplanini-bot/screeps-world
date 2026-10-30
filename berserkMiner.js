@@ -657,7 +657,7 @@ module.exports = {
                     retreatPosition = {
                         x: stopPosition.x,
                         y: stopPosition.y,
-                        roomName: stopPosition.roomName
+                        roomName: creep.room.name
                     };
 
                     creep.memory.retreatPosition = retreatPosition;
