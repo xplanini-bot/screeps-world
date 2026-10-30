@@ -14,6 +14,84 @@ if (Memory.lastServedTowerIndex === undefined) {
     Memory.lastServedTowerIndex = -1;
 }
 
+// Специальное снабжение оборонительной башни
+function runCarrierDefenseMode(creep, homeRoom) {
+
+    const assignment = Memory.towerSpawnDefenseAssignment;
+
+    // Этот перевозчик не назначен на снабжение башни
+    if (!assignment || assignment.creepName !== creep.name) {
+        return false;
+    }
+
+    // Не вмешиваемся в другие специальные доставки
+    if (
+        creep.memory.builderDeliveryTarget ||
+        creep.memory.towerDeliveryActive ||
+        creep.memory.returningToBase
+    ) {
+        delete Memory.towerSpawnDefenseAssignment;
+        return false;
+    }
+
+    const storage = homeRoom.storage;
+    const tower = Game.getObjectById(assignment.towerId);
+
+    // Если Storage или башня исчезли — освобождаем назначение
+    if (!storage || !tower || tower.room.name !== homeRoom.name) {
+        delete Memory.towerSpawnDefenseAssignment;
+        return true;
+    }
+
+    // Если энергии нет — забираем её непосредственно из Storage
+    if (creep.store[RESOURCE_ENERGY] === 0) {
+
+        const result = creep.withdraw(
+            storage,
+            RESOURCE_ENERGY
+        );
+
+        if (result === ERR_NOT_IN_RANGE) {
+            creep.moveTo(storage, {
+                range: 1,
+                reusePath: 20
+            });
+        } else if (
+            result === ERR_NOT_ENOUGH_RESOURCES ||
+            result === ERR_INVALID_TARGET
+        ) {
+            delete Memory.towerSpawnDefenseAssignment;
+        }
+
+        return true;
+    }
+
+    // Если энергия есть — направляемся к башне
+    if (!creep.pos.isNearTo(tower)) {
+        creep.moveTo(tower, {
+            range: 1,
+            reusePath: 20
+        });
+
+        return true;
+    }
+
+    // Проверяем, нуждается ли башня ещё в энергии
+    const freeCapacity = tower.store.getFreeCapacity(RESOURCE_ENERGY);
+
+    // Если башня уже заполнена — просто освобождаем назначение
+    if (freeCapacity > 0) {
+
+        // Делаем одну попытку передать энергию
+        creep.transfer(tower, RESOURCE_ENERGY);
+    }
+
+    // После попытки освобождаем назначение
+    delete Memory.towerSpawnDefenseAssignment;
+
+    return true;
+}
+
 // Найти следующую башню, которой требуется энергия
 function findTowerNeedingEnergy(room) {
     for (let i = 1; i <= TOWERS.length; i++) {
@@ -171,5 +249,6 @@ function runTowerDefense(room) {
 
 module.exports = {
     runTowerDefense,
-    manageCarrierAssignment
+    manageCarrierAssignment,
+    runCarrierDefenseMode
 };
