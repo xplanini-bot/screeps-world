@@ -1641,6 +1641,7 @@ module.exports = {
                     ? points.base.x + "," + points.base.y
                     : "нет"
             ),
+            "waitingForKeeperLogged=" + !!points.waitingForKeeperLogged,
             "hits=" + creep.hits + "/" + creep.hitsMax
         ].join(" | ");
 
