@@ -3,11 +3,18 @@ const TOWERS = [
     {
         id: "6ae4ae90b979624aae30b7e3",
         energyThreshold: 0.70
+    },
+    {
+        id: "ID_ВТОРОЙ_БАШНИ",
+        energyThreshold: 0.70
     }
 ];
 
 // Радиус обнаружения противников для атаки башней
 const TOWER_ATTACK_RANGE = 15;
+
+// Целевая прочность стен и Ramparts
+const TOWER_REPAIR_TARGET_HITS = 100000;
 
 // Индекс башни, с которой начинать следующую проверку
 if (Memory.lastServedTowerIndex === undefined) {
@@ -222,13 +229,28 @@ function runTowerDefense(room) {
 
             if (hostiles.length === 0) {
 
-                // Ищем раненых дружественных юнитов
+                // Сначала лечим раненых дружественных юнитов
                 const wounded = tower.room.find(FIND_MY_CREEPS, {
                     filter: creep => creep.hits < creep.hitsMax
                 });
 
                 if (wounded.length > 0) {
                     tower.heal(wounded[0]);
+                    continue;
+                }
+
+                // Если раненых нет — ищем стены и Ramparts для ремонта
+                const repairTargets = tower.room.find(FIND_MY_STRUCTURES, {
+                    filter: structure =>
+                        (
+                            structure.structureType === STRUCTURE_WALL ||
+                            structure.structureType === STRUCTURE_RAMPART
+                        ) &&
+                        structure.hits < TOWER_REPAIR_TARGET_HITS
+                });
+
+                if (repairTargets.length > 0) {
+                    tower.repair(repairTargets[0]);
                 }
 
                 continue;
