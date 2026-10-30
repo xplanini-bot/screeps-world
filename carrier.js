@@ -767,7 +767,6 @@ function runCarrier(creep, spawn, homeRoom, helpers) {
 module.exports = {
     run: runCarrier,
     getSpawnConfig,
-    manageSpawning,
-    configure
+    manageSpawning
 };
 
