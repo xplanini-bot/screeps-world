@@ -778,6 +778,19 @@ module.exports = {
         RANGED_ATTACK, RANGED_ATTACK
     ],
 
+    // Усиленный стрелок: 10 TOUGH, 10 MOVE, 8 RANGED_ATTACK.
+    advancedBody: [
+        TOUGH, TOUGH, TOUGH, TOUGH, TOUGH,
+        TOUGH, TOUGH, TOUGH, TOUGH, TOUGH,
+
+        MOVE, MOVE, MOVE, MOVE, MOVE,
+        MOVE, MOVE, MOVE, MOVE, MOVE,
+
+        RANGED_ATTACK, RANGED_ATTACK, RANGED_ATTACK,
+        RANGED_ATTACK, RANGED_ATTACK, RANGED_ATTACK,
+        RANGED_ATTACK, RANGED_ATTACK
+    ],
+
     // Каждый хиллер: 4 MOVE и 4 HEAL.
     healerBody: [
         MOVE, HEAL,
@@ -916,6 +929,16 @@ module.exports = {
         if (spawn.spawning) {
             return;
         }
+        // Определяем количество построенных расширителей.
+        const extensions = spawn.room.find(FIND_MY_STRUCTURES, {
+            filter: structure =>
+                structure.structureType === STRUCTURE_EXTENSION
+        });
+
+        // После постройки всех 30 расширителей используем усиленное тело.
+        const attackerBody = extensions.length >= 30
+            ? this.advancedBody
+            : this.body;
 
         const allCreeps = Object.values(Game.creeps);
 
@@ -940,7 +963,7 @@ module.exports = {
             const name = "Attacker_" + Game.time;
 
             const result = spawn.spawnCreep(
-                this.body,
+                attackerBody,
                 name,
                 {
                     memory: {
@@ -975,7 +998,7 @@ module.exports = {
             const name = "AttackerReserve_" + Game.time;
 
             const result = spawn.spawnCreep(
-                this.body,
+                attackerBody,
                 name,
                 {
                     memory: {
