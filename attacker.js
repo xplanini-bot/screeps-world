@@ -1617,6 +1617,41 @@ module.exports = {
 
         const points = creep.memory.attackerPositions;
 
+        const debugStatus = [
+            "phase=" + (points.phase || "не задана"),
+            "waitingNewKeeper=" + !!points.waitingForNewKeeper,
+            "keeper=" + (
+                points.keeper
+                    ? points.keeper.x + "," + points.keeper.y
+                    : "нет"
+            ),
+            "keeperId=" + (points.keeperId || "нет"),
+            "tracking=" + (
+                points.keeperTracking
+                    ? points.keeperTracking.stableTicks + "/10"
+                    : "нет"
+            ),
+            "fire=" + (
+                points.fire
+                    ? points.fire.x + "," + points.fire.y
+                    : "нет"
+            ),
+            "base=" + (
+                points.base
+                    ? points.base.x + "," + points.base.y
+                    : "нет"
+            ),
+            "hits=" + creep.hits + "/" + creep.hitsMax
+        ].join(" | ");
+
+        if (points.lastDebugStatus !== debugStatus) {
+            console.log(
+                "[ATTACKER STATUS] " + creep.name + " | " + debugStatus
+            );
+
+            points.lastDebugStatus = debugStatus;
+        }
+
         points.lastPos = getPositionData(creep.pos);
 
         // Однократно сбрасываем старый план,
