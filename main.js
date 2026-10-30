@@ -60,8 +60,11 @@ function manageSpawning(spawn) {
     });
 
 
+    // Если настроена хотя бы одна башня — отдельный ремонтник не нужен
+    const hasTowerAssigned = towerSpawnDefense.TOWERS.length > 0;
+
     // До появления первого контейнера ремонтник не нужен
-    const repairerCount = hasContainers ? 1 : 0;
+    const repairerCount = hasContainers && !hasTowerAssigned ? 1 : 0;
 
     const allMines = calculateAllMineNeeds(spawn.room);
 

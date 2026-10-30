@@ -229,28 +229,29 @@ function runTowerDefense(room) {
 
             if (hostiles.length === 0) {
 
-                // Сначала лечим раненых дружественных юнитов
-                const wounded = tower.room.find(FIND_MY_CREEPS, {
-                    filter: creep => creep.hits < creep.hitsMax
-                });
+                // Сначала ищем повреждённые здания (кроме стен и Ramparts)
+                let repairTarget = tower.room.find(FIND_MY_STRUCTURES, {
+                    filter: structure =>
+                        structure.structureType !== STRUCTURE_WALL &&
+                        structure.structureType !== STRUCTURE_RAMPART &&
+                        structure.hits < structure.hitsMax
+                })[0];
 
-                if (wounded.length > 0) {
-                    tower.heal(wounded[0]);
-                    continue;
+                // Если повреждённых зданий нет — ищем стены и Ramparts
+                if (!repairTarget) {
+                    repairTarget = tower.room.find(FIND_MY_STRUCTURES, {
+                        filter: structure =>
+                            (
+                                structure.structureType === STRUCTURE_WALL ||
+                                structure.structureType === STRUCTURE_RAMPART
+                            ) &&
+                            structure.hits < TOWER_REPAIR_TARGET_HITS
+                    })[0];
                 }
 
-                // Если раненых нет — ищем стены и Ramparts для ремонта
-                const repairTargets = tower.room.find(FIND_MY_STRUCTURES, {
-                    filter: structure =>
-                        (
-                            structure.structureType === STRUCTURE_WALL ||
-                            structure.structureType === STRUCTURE_RAMPART
-                        ) &&
-                        structure.hits < TOWER_REPAIR_TARGET_HITS
-                });
-
-                if (repairTargets.length > 0) {
-                    tower.repair(repairTargets[0]);
+                // Ремонтируем найденную цель
+                if (repairTarget) {
+                    tower.repair(repairTarget);
                 }
 
                 continue;
