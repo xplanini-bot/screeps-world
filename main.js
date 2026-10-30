@@ -12,6 +12,7 @@ const upgrader = require("upgrader");
 const miner = require("miner");
 const builderModule = require("builder");
 //const combatMiner = require("combatMiner");
+const towerDelivery = require("towerDelivery");
 
 const carrier = require("carrier");
 const berserkMiner = require("berserkMiner");
