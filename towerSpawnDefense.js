@@ -1,7 +1,7 @@
 // Башни, которые обслуживает модуль
 const TOWERS = [
     {
-        id: "ВСТАВЬ_ID_БАШНИ",
+        id: "6ae4ae90b979624aae30b7e3",
         energyThreshold: 0.70
     }
 ];
