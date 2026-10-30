@@ -2369,26 +2369,14 @@ module.exports = {
                             keeper.name + ", ID: " + keeper.id
                         );
                     } else {
-                        const visible = keepers.map(hostile =>
-                            hostile.name + " (" +
-                            hostile.pos.x + "," +
-                            hostile.pos.y + ")"
-                        ).join("; ");
+                        delete points.keeperId;
 
-                        const message =
-                            "Ожидается " + expectedKeeperName +
-                            ". Видимые Keeper: " +
-                            (visible || "нет");
+                        changePhase(
+                            "base",
+                            "Keeper погиб или исчез"
+                        );
 
-                        if (points.lastKeeperSearchLog !== message) {
-                            console.log(
-                                "[attacker " + creep.name +
-                                "] " + message
-                            );
-
-                            points.lastKeeperSearchLog = message;
-                        }
-
+                        creep.moveTo(basePos, { reusePath: 20 });
                         return;
                     }
                 }
