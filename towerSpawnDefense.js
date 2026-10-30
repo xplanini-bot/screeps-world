@@ -220,7 +220,19 @@ function runTowerDefense(room) {
                 TOWER_ATTACK_RANGE
             );
 
-            if (hostiles.length === 0) continue;
+            if (hostiles.length === 0) {
+
+                // Ищем раненых дружественных юнитов
+                const wounded = tower.room.find(FIND_MY_CREEPS, {
+                    filter: creep => creep.hits < creep.hitsMax
+                });
+
+                if (wounded.length > 0) {
+                    tower.heal(wounded[0]);
+                }
+
+                continue;
+            }
 
             // Сортируем по количеству активных TOUGH
             const sortedHostiles = hostiles.slice().sort((a, b) => {
