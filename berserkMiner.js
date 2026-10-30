@@ -18,6 +18,15 @@ module.exports = {
         MOVE, MOVE, MOVE, MOVE
     ],
 
+    // Усиленное тело: 12 WORK + 12 MOVE
+    advancedBody: [
+        WORK, WORK, WORK, WORK, WORK, WORK,
+        WORK, WORK, WORK, WORK, WORK, WORK,
+
+        MOVE, MOVE, MOVE, MOVE, MOVE, MOVE,
+        MOVE, MOVE, MOVE, MOVE, MOVE, MOVE
+    ],
+
     // Роль и количество перевозчиков
     carrierRole: "berserkCarrier",
     carrierDesiredCount: 2,
@@ -36,6 +45,14 @@ module.exports = {
         if (!this.targetRoom || !spawn || spawn.spawning) {
             return;
         }
+        const extensions = spawn.room.find(FIND_MY_STRUCTURES, {
+            filter: structure =>
+                structure.structureType === STRUCTURE_EXTENSION
+        });
+
+        const minerBody = extensions.length >= 30
+            ? this.advancedBody
+            : this.body;
 
         const squadId = "attackerSquad_" + this.targetRoom;
         const creeps = Object.values(Game.creeps);
@@ -50,7 +67,7 @@ module.exports = {
         // Он сам войдёт в целевую комнату и найдёт
         // логово, выбранное боевым отрядом.
         if (!miner) {
-            const cost = this.body.reduce(
+            const cost = minerBody.reduce(
                 (total, part) => total + BODYPART_COST[part],
                 0
             );
@@ -62,7 +79,7 @@ module.exports = {
             const name = "BerserkMiner_" + Game.time;
 
             const result = spawn.spawnCreep(
-                this.body,
+                minerBody,
                 name,
                 {
                     memory: {
