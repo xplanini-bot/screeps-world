@@ -1,4 +1,6 @@
 
+const construction = require("construction");
+
 const advancedUpgrader = {
     role: "advancedUpgrader",
     desiredCount: 1,
@@ -67,55 +69,58 @@ const advancedUpgrader = {
     },
 
     // Работа апгрейдера
-    
-run(creep, room) {
-    const controller = room.controller;
-    if (!controller) return;
 
-    const container = this.findControllerContainer(room);
-    if (!container) return;
+    run(creep, room) {
+        // Освобождаем клетку для строительства
+        if (construction.moveOffConstructionSite(creep)) return;
 
-    // Сначала апгрейдер должен добраться до контейнера
-    if (!creep.memory.containerPostReached) {
-        if (creep.pos.getRangeTo(container) > 1) {
+        const controller = room.controller;
+        if (!controller) return;
+
+        const container = this.findControllerContainer(room);
+        if (!container) return;
+
+        // Сначала апгрейдер должен добраться до контейнера
+        if (!creep.memory.containerPostReached) {
+            if (creep.pos.getRangeTo(container) > 1) {
+                creep.moveTo(container, {
+                    range: 1,
+                    reusePath: 20
+                });
+                return;
+            }
+
+            // Апгрейдер уже стоит рядом с контейнером
+            creep.memory.containerPostReached = true;
+        }
+
+        const energy = creep.store[RESOURCE_ENERGY];
+
+        // Если энергия есть — улучшаем контроллер
+        if (energy > 0) {
+            const result = creep.upgradeController(controller);
+
+            if (result === ERR_NOT_IN_RANGE) {
+                creep.moveTo(controller, {
+                    reusePath: 20
+                });
+            }
+
+            return;
+        }
+
+        // Если энергии нет — ждём её в контейнере
+        if (container.store[RESOURCE_ENERGY] === 0) return;
+
+        const result = creep.withdraw(container, RESOURCE_ENERGY);
+
+        if (result === ERR_NOT_IN_RANGE) {
             creep.moveTo(container, {
                 range: 1,
                 reusePath: 20
             });
-            return;
         }
-
-        // Апгрейдер уже стоит рядом с контейнером
-        creep.memory.containerPostReached = true;
     }
-
-    const energy = creep.store[RESOURCE_ENERGY];
-
-    // Если энергия есть — улучшаем контроллер
-    if (energy > 0) {
-        const result = creep.upgradeController(controller);
-
-        if (result === ERR_NOT_IN_RANGE) {
-            creep.moveTo(controller, {
-                reusePath: 20
-            });
-        }
-
-        return;
-    }
-
-    // Если энергии нет — ждём её в контейнере
-    if (container.store[RESOURCE_ENERGY] === 0) return;
-
-    const result = creep.withdraw(container, RESOURCE_ENERGY);
-
-    if (result === ERR_NOT_IN_RANGE) {
-        creep.moveTo(container, {
-            range: 1,
-            reusePath: 20
-        });
-    }
-}
 
 };
 
