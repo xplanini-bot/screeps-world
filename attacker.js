@@ -763,7 +763,7 @@ module.exports = {
     healerDesiredCount: 2,
 
     // Пустая стрка отключает создание стрелка.E26N55
-    targetRoom: "E26N55",
+    targetRoom: "",
     previewOnly: false,
 
     // Стрелок: 10 TOUGH, 8 MOVE, 5 RANGED_ATTACK.
@@ -1674,13 +1674,7 @@ if (creep.memory.lastHealerDebug !== healerDebug) {
             "hits=" + creep.hits + "/" + creep.hitsMax
         ].join(" | ");
 
-        if (points.lastDebugStatus !== debugStatus) {
-            console.log(
-                "[ATTACKER STATUS] " + creep.name + " | " + debugStatus
-            );
-
-            points.lastDebugStatus = debugStatus;
-        }
+        
 
         points.lastPos = getPositionData(creep.pos);
 
@@ -1798,11 +1792,6 @@ if (creep.memory.lastHealerDebug !== healerDebug) {
             return;
         }
 
-        console.log(
-            "[ATTACKER CHECK] " + creep.name +
-            " | keeper=" + (points.keeper ? "есть" : "нет") +
-            " | waitingForNewKeeper=" + !!points.waitingForNewKeeper
-        );
 
         // 4. Ждём Keeper именно выбранного логова.
         // Его первое появление у логова ещё не означает,
