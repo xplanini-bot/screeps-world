@@ -762,8 +762,8 @@ module.exports = {
     healerRole: "attackerHealer",
     healerDesiredCount: 2,
 
-    // Пустая строка отключает создание стрелка.
-    targetRoom: "",
+    // Пустая стрка отключает создание стрелка.E26N55
+    targetRoom: "E26N55",
     previewOnly: false,
 
     // Стрелок: 10 TOUGH, 8 MOVE, 5 RANGED_ATTACK.
