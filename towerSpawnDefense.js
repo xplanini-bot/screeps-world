@@ -29,12 +29,81 @@ function findTowerNeedingEnergy(room) {
         const capacity = tower.store.getCapacity(RESOURCE_ENERGY);
 
         if (energy <= capacity * config.energyThreshold) {
-            Memory.lastServedTowerIndex = index;
-            return tower;
+            return {
+                tower,
+                index
+            };
         }
     }
 
     return null;
+}
+
+// Назначение перевозчика для снабжения башни
+function manageCarrierAssignment(room) {
+
+    // Проверяем существующее назначение
+    const assignment = Memory.towerSpawnDefenseAssignment;
+
+    if (assignment) {
+        const creep = Game.creeps[assignment.creepName];
+        const tower = Game.getObjectById(assignment.towerId);
+
+        if (
+            creep &&
+            creep.memory.role === "carrier" &&
+            tower &&
+            tower.room.name === room.name
+        ) {
+            const config = TOWERS.find(item => item.id === tower.id);
+
+            if (config) {
+                const energy = tower.store[RESOURCE_ENERGY];
+                const capacity = tower.store.getCapacity(RESOURCE_ENERGY);
+
+                if (energy <= capacity * config.energyThreshold) {
+                    return;
+                }
+            }
+        }
+
+        // Назначение устарело
+        delete Memory.towerSpawnDefenseAssignment;
+    }
+
+    // Для снабжения нужен Storage с запасом не менее 1000 энергии
+    const storage = room.storage;
+
+    if (!storage) return;
+    if (storage.store[RESOURCE_ENERGY] < 1000) return;
+
+    // Ищем свободного обычного Carrier
+    const carrier = Object.values(Game.creeps).find(creep =>
+        creep.memory.role === "carrier" &&
+        !creep.spawning &&
+        creep.store[RESOURCE_ENERGY] === 0 &&
+        !creep.memory.builderDeliveryTarget &&
+        !creep.memory.towerDeliveryActive &&
+        !creep.memory.returningToBase &&
+        !creep.memory.deliveryTargetId &&
+        !creep.memory.energyReservationTargetId
+    );
+
+    if (!carrier) return;
+
+    // Ищем следующую башню для обслуживания
+    const result = findTowerNeedingEnergy(room);
+
+    if (!result) return;
+
+    // Сохраняем назначение
+    Memory.towerSpawnDefenseAssignment = {
+        creepName: carrier.name,
+        towerId: result.tower.id
+    };
+
+    // Запоминаем последнюю назначенную башню
+    Memory.lastServedTowerIndex = result.index;
 }
 
 // Управление атакой башен
@@ -101,5 +170,6 @@ function runTowerDefense(room) {
 }
 
 module.exports = {
-    runTowerDefense
+    runTowerDefense,
+    manageCarrierAssignment
 };

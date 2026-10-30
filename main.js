@@ -939,8 +939,9 @@ module.exports.loop = function () {
 
     // УПРАВЛЕНИЕ БАШНЕЙ в отдельном модуле
     towerDelivery.manageTower();
-    
+
     towerSpawnDefense.runTowerDefense(homeRoom);
+    towerSpawnDefense.manageCarrierAssignment(homeRoom);
 
     const minerReplacementWaiting = manageSpawning(spawn);
 
