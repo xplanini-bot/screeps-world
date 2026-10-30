@@ -1,15 +1,11 @@
 const towerDelivery = require("towerDelivery");
+const roomConfig = require("roomConfig");
 
 // Модуль перевозчиков
 const advancedUpgrader = require("advancedUpgrader");
 const builderModule = require("builder");
 
 const DESIRED_CARRIERS = 2;
-const MAX_TOWER_DELIVERY_CARRIERS = 0;
-
-// Настройки приходят из main.js.
-let REMOTE_ROOMS = [];
-let TOWER_CONTAINER_IDS = [];
 
 // Тела перевозчиков по количеству построенных Extensions.
 const CARRIER_BODY_Version_0 = [
@@ -74,15 +70,6 @@ function getSpawnConfig(spawn, creeps, hasContainers) {
     return { desired, body };
 }
 
-function configure(options = {}) {
-    REMOTE_ROOMS = Array.isArray(options.remoteRooms)
-        ? options.remoteRooms
-        : [];
-
-    TOWER_CONTAINER_IDS = Array.isArray(options.towerContainerIds)
-        ? options.towerContainerIds
-        : [];
-}
 
 // Доставка энергии до контейнера контроллера
 function runControllerContainerDeliveryMode(creep, homeRoom, helpers) {
@@ -273,7 +260,7 @@ function manageSpawning(spawn) {
 
     const hasContainers = [
         spawn.room.name,
-        ...REMOTE_ROOMS
+        ...roomConfig.REMOTE_ROOMS
     ].some(roomName => {
         const room = Game.rooms[roomName];
 
@@ -370,7 +357,7 @@ function runCarrier(creep, spawn, homeRoom, helpers) {
         const handled = builderModule.runBuilderDeliveryMode(
             creep,
             homeRoom,
-            REMOTE_ROOMS,
+            roomConfig.REMOTE_ROOMS,
             helpers
         );
 
@@ -378,9 +365,9 @@ function runCarrier(creep, spawn, homeRoom, helpers) {
     }
 
     // Специальный режим доставки энергии в контейнер башни
-    //if (towerDelivery.runTowerContainerDeliveryMode(creep, homeRoom, helpers)) {
-    //    return;
-    //}
+    if (towerDelivery.runTowerContainerDeliveryMode(creep, homeRoom, helpers)) {
+        return;
+    }
 
     // Специальный режим доставки энергии в контейнер контроллера
     if (runControllerContainerDeliveryMode(creep, homeRoom, helpers)) {
@@ -446,7 +433,7 @@ function runCarrier(creep, spawn, homeRoom, helpers) {
                 builderModule.runBuilderDeliveryMode(
                     creep,
                     homeRoom,
-                    REMOTE_ROOMS,
+                    roomConfig.REMOTE_ROOMS,
                     helpers
                 );
                 return;
@@ -553,7 +540,7 @@ function runCarrier(creep, spawn, homeRoom, helpers) {
         const recoveryRoomNames = [
             creep.room.name,
             homeRoom.name,
-            ...REMOTE_ROOMS
+            ...roomConfig.REMOTE_ROOMS
         ];
 
         let recoveryTarget = null;
@@ -656,7 +643,7 @@ function runCarrier(creep, spawn, homeRoom, helpers) {
         }
 
         const roomNames = [
-            ...REMOTE_ROOMS,
+            ...roomConfig.REMOTE_ROOMS,
             homeRoom.name
         ];
 

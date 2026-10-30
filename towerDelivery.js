@@ -1,11 +1,15 @@
 
 // Башня и закреплённые за ней контейнеры
 const TOWER_ID = null;
+// Башня и закреплённые за ней контейнеры
 const TOWER_CONTAINER_IDS = [];
+// Доля средней прочности для определения критических повреждений
+const TOWER_CRITICAL_RATIO = 0.8;
 
-// Максимальное количество перевозчиков
-// с активным заказом на доставку башне
+// Максимальное количество перевозчиков с активным заказом на доставку башне
 const MAX_TOWER_DELIVERY_CARRIERS = 0;
+// Средняя прочность ремпартов и стен до значения которой выполняется ремонт башней
+const TOWER_WALL_TARGET_HITS = 100000;
 
 // Тело обслуживающего башню
 const TOWER_SUPPORT_BODY = [
@@ -311,22 +315,6 @@ function defendWithTower(tower, hostiles) {
 }
 
 
-// Переключение режимов работы башни
-function manageTower() {
-    const tower = Game.getObjectById(TOWER_ID);
-
-    if (!tower) return;
-
-    const hostiles = tower.room.find(FIND_HOSTILE_CREEPS);
-
-    if (hostiles.length > 0) {
-        // Временно передаём управление оборонительной логике.
-        defendWithTower(tower, hostiles);
-    } else {
-        // Врагов нет — работаем в режиме стройки.
-        repairTowerDefenses();
-    }
-}
 
 // Расчёт средней прочности стен и рампартов
 function calculateTowerDefenseStats(room) {
@@ -485,6 +473,105 @@ function runTowerSupport(creep, spawn) {
     }
 }
 
+// РЕЖИМ РАБОТЫ БАШНИ - МИРНЫЙ
+
+// Мирное укрепление самых слабых стен и рампартов
+function repairTowerDefenses() {
+    const tower = Game.getObjectById(TOWER_ID);
+
+    if (!tower) return;
+
+    // Башне нужно минимум 10 единиц энергии
+    if (tower.store[RESOURCE_ENERGY] < 10) return;
+
+    // Ищем только стены и рампарты ниже целевой прочности
+    const targets = tower.room.find(FIND_STRUCTURES, {
+        filter: structure =>
+            (
+                structure.structureType === STRUCTURE_WALL ||
+                structure.structureType === STRUCTURE_RAMPART
+            ) &&
+            structure.hits < TOWER_WALL_TARGET_HITS
+    });
+
+    // Все укрепления достигли целевой прочности
+    if (targets.length === 0) return;
+
+    // В первую очередь укрепляем самый слабый объект
+    targets.sort((a, b) => a.hits - b.hits);
+
+    tower.repair(targets[0]);
+}
+
+// Создание обслуживающего башню крипа
+function manageSpawning(spawn) {
+    if (spawn.spawning) return false;
+
+    const hasTower = !!Game.getObjectById(TOWER_ID);
+
+    const hasTowerContainer = TOWER_CONTAINER_IDS.some(id => {
+        const container = Game.getObjectById(id);
+
+        return container &&
+            container.structureType === STRUCTURE_CONTAINER;
+    });
+
+    if (!hasTower || !hasTowerContainer) return false;
+
+    const towerSupports = Object.values(Game.creeps).filter(creep =>
+        creep.memory.role === "towerSupport"
+    );
+
+    const towerSupportNeedsReplacement = towerSupports.some(creep =>
+        !creep.spawning &&
+        creep.ticksToLive !== undefined &&
+        creep.ticksToLive <= 300
+    );
+
+    const desiredTowerSupports =
+        towerSupports.length === 0 ||
+        (towerSupportNeedsReplacement && towerSupports.length === 1)
+            ? 1
+            : towerSupports.length;
+
+    if (towerSupports.length >= desiredTowerSupports) return false;
+
+    const cost = TOWER_SUPPORT_BODY.reduce(
+        (total, part) => total + BODYPART_COST[part],
+        0
+    );
+
+    if (spawn.room.energyAvailable < cost) return false;
+
+    const name = "TowerSupport_" + Game.time;
+
+    const result = spawn.spawnCreep(
+        TOWER_SUPPORT_BODY,
+        name,
+        {
+            memory: {
+                role: "towerSupport",
+                working: false
+            }
+        }
+    );
+
+    if (result === OK) {
+        console.log("Создаём крипа:", name, "роль: towerSupport");
+        return true;
+    }
+
+    return false;
+}
+
 module.exports = {
-    runTowerContainerDeliveryMode
+    TOWER_ID,
+    TOWER_CONTAINER_IDS,
+    runTowerContainerDeliveryMode,
+    defendWithTower,
+    manageTower,
+    calculateTowerDefenseStats,
+    repairTowerDefenses,
+    runTowerSupport,
+    manageSpawning
 };
