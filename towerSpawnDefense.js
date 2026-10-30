@@ -194,13 +194,59 @@ function manageCarrierAssignment(room) {
 // Управление атакой башен
 function runTowerDefense(room) {
 
-    for (const config of TOWERS) {
+    const attackMemoryKey = "towerWasUnderAttack_" + room.name;
+    const healMemoryKey = "towerHealTargets_" + room.name;
 
-        const tower = Game.getObjectById(config.id);
+    // Получаем все доступные башни комнаты
+    const activeTowers = TOWERS
+        .map(config => Game.getObjectById(config.id))
+        .filter(tower => tower && tower.room.name === room.name);
 
-        if (!tower) continue;
-        if (tower.room.name !== room.name) continue;
+    // Проверяем, есть ли враги в радиусе хотя бы одной башни
+    const enemiesDetected = activeTowers.some(tower =>
+        tower.pos.findInRange(
+            FIND_HOSTILE_CREEPS,
+            TOWER_ATTACK_RANGE
+        ).length > 0
+    );
 
+    // Если обнаружен враг — запоминаем нападение
+    if (enemiesDetected) {
+        Memory[attackMemoryKey] = true;
+
+        // Старый список лечения больше не актуален
+        delete Memory[healMemoryKey];
+    }
+
+    // Если нападение закончилось — один раз составляем список раненых
+    if (!enemiesDetected && Memory[attackMemoryKey]) {
+
+        const wounded = room.find(FIND_MY_CREEPS, {
+            filter: creep => creep.hits < creep.hitsMax
+        });
+
+        Memory[healMemoryKey] = wounded.map(creep => creep.id);
+
+        delete Memory[attackMemoryKey];
+    }
+
+    // Обновляем список: убираем погибших и уже вылеченных
+    if (Memory[healMemoryKey]) {
+        Memory[healMemoryKey] = Memory[healMemoryKey].filter(id => {
+            const creep = Game.getObjectById(id);
+
+            return creep && creep.hits < creep.hitsMax;
+        });
+
+        if (Memory[healMemoryKey].length === 0) {
+            delete Memory[healMemoryKey];
+        }
+    }
+
+    // Управляем каждой башней
+    for (let i = 0; i < activeTowers.length; i++) {
+
+        const tower = activeTowers[i];
         const memoryKey = "towerTarget_" + tower.id;
 
         // Проверяем ранее выбранную цель
@@ -229,7 +275,27 @@ function runTowerDefense(room) {
 
             if (hostiles.length === 0) {
 
-                // Сначала ищем повреждённые здания (кроме стен и Ramparts)
+                // Если есть раненые из сохранённого списка — лечим
+                const healTargets = Memory[healMemoryKey];
+
+                if (healTargets && healTargets.length > 0) {
+
+                    // Ищем раненого в радиусе лечения башни
+                    const wounded = healTargets
+                        .map(id => Game.getObjectById(id))
+                        .find(creep =>
+                            creep &&
+                            creep.hits < creep.hitsMax &&
+                            tower.pos.getRangeTo(creep) <= 20
+                        );
+
+                    if (wounded) {
+                        tower.heal(wounded);
+                        continue;
+                    }
+                }
+
+                // Сначала ищем повреждённые здания, кроме стен и Ramparts
                 let repairTarget = tower.room.find(FIND_MY_STRUCTURES, {
                     filter: structure =>
                         structure.structureType !== STRUCTURE_WALL &&
