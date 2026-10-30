@@ -53,6 +53,8 @@ module.exports = {
     manageSpawning(spawn) {
         if (!spawn || spawn.spawning) return;
 
+        if (!this.targetRoom) return;
+        
         const attackers = Object.values(Game.creeps).filter(
             creep => creep.memory.role === this.role
         ).length;
