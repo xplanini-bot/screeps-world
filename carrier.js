@@ -564,7 +564,9 @@ function runCarrier(creep, spawn, homeRoom, helpers) {
             // Сначала проверяем могилы погибших крипов
             const tombstones = room.find(FIND_TOMBSTONES, {
                 filter: tombstone =>
-                    tombstone.store[RESOURCE_ENERGY] > 0
+                    Object.keys(tombstone.store).some(
+                        resource => tombstone.store[resource] > 0
+                    )
             });
 
             if (tombstones.length > 0) {
@@ -613,15 +615,26 @@ function runCarrier(creep, spawn, homeRoom, helpers) {
             }
         }
 
-        // Если нашли оставленную энергию — забираем её
+        // Если нашли оставленные ресурсы — забираем их
         if (recoveryTarget) {
             let result;
 
             if (recoveryType === "tombstone") {
-                result = creep.withdraw(
-                    recoveryTarget,
-                    RESOURCE_ENERGY
+
+                // Находим первый доступный ресурс в могиле
+                const resourceType = Object.keys(recoveryTarget.store).find(
+                    resource => recoveryTarget.store[resource] > 0
                 );
+
+                if (resourceType) {
+                    result = creep.withdraw(
+                        recoveryTarget,
+                        resourceType
+                    );
+                } else {
+                    result = ERR_NOT_ENOUGH_RESOURCES;
+                }
+
             } else {
                 result = creep.pickup(recoveryTarget);
             }
