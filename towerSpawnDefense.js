@@ -14,7 +14,7 @@ const TOWERS = [
 const TOWER_ATTACK_RANGE = 15;
 
 // Целевая прочность стен и Ramparts
-const TOWER_REPAIR_TARGET_HITS = 100000;
+const TOWER_REPAIR_TARGET_HITS = 50000;
 
 // Индекс башни, с которой начинать следующую проверку
 if (Memory.lastServedTowerIndex === undefined) {
