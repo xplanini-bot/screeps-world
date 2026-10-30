@@ -1335,6 +1335,35 @@ module.exports = {
         const fireSpot = points.healerFireSpots &&
             points.healerFireSpots[slot];
 
+            const healerDebug = [
+    "healer=" + creep.name,
+    "slot=" + slot,
+    "phase=" + points.phase,
+    "firePlanVersion=" + points.healerFireRoutePlanVersion,
+    "fireThreatPosition=" + points.healerFireThreatPosition,
+    "keeper=" + (
+        points.keeper
+            ? points.keeper.x + "," + points.keeper.y
+            : "нет"
+    ),
+    "fireSpot=" + (
+        fireSpot
+            ? fireSpot.x + "," + fireSpot.y
+            : "нет"
+    ),
+    "savedFire=" + (
+        creep.memory.healerPositions?.fire
+            ? creep.memory.healerPositions.fire.x + "," +
+              creep.memory.healerPositions.fire.y
+            : "нет"
+    )
+].join(" | ");
+
+if (creep.memory.lastHealerDebug !== healerDebug) {
+    console.log("[HEALER STATUS] " + healerDebug);
+    creep.memory.lastHealerDebug = healerDebug;
+}
+
         if (!base1Spot) {
             return;
         }
