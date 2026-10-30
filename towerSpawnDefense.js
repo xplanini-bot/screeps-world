@@ -249,114 +249,91 @@ function runTowerDefense(room) {
         const tower = activeTowers[i];
         const memoryKey = "towerTarget_" + tower.id;
 
-        // Проверяем ранее выбранную цель
-        let target = Memory[memoryKey]
-            ? Game.getObjectById(Memory[memoryKey])
-            : null;
+        // Проверяем врагов непосредственно в этом тике
+        const hostiles = tower.pos.findInRange(
+            FIND_HOSTILE_CREEPS,
+            TOWER_ATTACK_RANGE
+        );
 
-        // Проверяем, существует ли цель и находится ли она в радиусе
-        if (
-            !target ||
-            target.my ||
-            target.pos.roomName !== room.name ||
-            tower.pos.getRangeTo(target) > TOWER_ATTACK_RANGE
-        ) {
-            delete Memory[memoryKey];
-            target = null;
-        }
+        // Если враги есть — атакуем
+        if (hostiles.length > 0) {
 
-        // Если цели нет, выбираем новую
-        if (!target) {
+            let target = Memory[memoryKey]
+                ? Game.getObjectById(Memory[memoryKey])
+                : null;
 
-            const hostiles = tower.pos.findInRange(
-                FIND_HOSTILE_CREEPS,
-                TOWER_ATTACK_RANGE
-            );
+            // Проверяем сохранённую цель
+            if (!target || !hostiles.some(creep => creep.id === target.id)) {
+                delete Memory[memoryKey];
 
-            if (hostiles.length === 0) {
+                // Сортируем по количеству активных TOUGH
+                const sortedHostiles = hostiles.slice().sort((a, b) => {
 
-                // Если есть раненые из сохранённого списка — лечим
-                const healTargets = Memory[healMemoryKey];
+                    const toughA = a.getActiveBodyparts(TOUGH);
+                    const toughB = b.getActiveBodyparts(TOUGH);
 
-                if (healTargets && healTargets.length > 0) {
-
-                    // Ищем раненого в радиусе лечения башни
-                    const wounded = healTargets
-                        .map(id => Game.getObjectById(id))
-                        .find(creep =>
-                            creep &&
-                            creep.hits < creep.hitsMax &&
-                            tower.pos.getRangeTo(creep) <= 20
-                        );
-
-                    if (wounded) {
-                        tower.heal(wounded);
-                        continue;
+                    if (toughA !== toughB) {
+                        return toughA - toughB;
                     }
-                }
 
-                // Сначала ищем повреждённые здания, кроме стен и Ramparts
-                console.log(
-                    "Повреждённые здания:",
-                    tower.room.find(FIND_MY_STRUCTURES, {
-                        filter: structure =>
-                            structure.hits < structure.hitsMax
-                    }).map(s => ({
-                        type: s.structureType,
-                        hits: s.hits,
-                        max: s.hitsMax
-                    }))
-                );
+                    return tower.pos.getRangeTo(a) -
+                        tower.pos.getRangeTo(b);
+                });
 
-                let repairTarget = tower.room.find(FIND_MY_STRUCTURES, {
-                    filter: structure =>
-                        structure.structureType !== STRUCTURE_WALL &&
-                        structure.structureType !== STRUCTURE_RAMPART &&
-                        structure.hits < structure.hitsMax
-                })[0];
-
-                // Если повреждённых зданий нет — ищем стены и Ramparts
-                if (!repairTarget) {
-                    repairTarget = tower.room.find(FIND_MY_STRUCTURES, {
-                        filter: structure =>
-                            (
-                                structure.structureType === STRUCTURE_WALL ||
-                                structure.structureType === STRUCTURE_RAMPART
-                            ) &&
-                            structure.hits < TOWER_REPAIR_TARGET_HITS
-                    })[0];
-                }
-
-                // Ремонтируем найденную цель
-                if (repairTarget) {
-                    tower.repair(repairTarget);
-                }
-
-                continue;
+                target = sortedHostiles[0];
+                Memory[memoryKey] = target.id;
             }
 
-            // Сортируем по количеству активных TOUGH
-            const sortedHostiles = hostiles.slice().sort((a, b) => {
-
-                const toughA = a.getActiveBodyparts(TOUGH);
-                const toughB = b.getActiveBodyparts(TOUGH);
-
-                if (toughA !== toughB) {
-                    return toughA - toughB;
-                }
-
-                return tower.pos.getRangeTo(a) -
-                    tower.pos.getRangeTo(b);
-            });
-
-            target = sortedHostiles[0];
-
-            // Запоминаем выбранную цель
-            Memory[memoryKey] = target.id;
+            tower.attack(target);
+            continue;
         }
 
-        // Продолжаем атаковать выбранную цель
-        tower.attack(target);
+        // Врагов нет — удаляем старую цель
+        delete Memory[memoryKey];
+
+        // Сначала лечим раненых из сохранённого списка
+        const healTargets = Memory[healMemoryKey];
+
+        if (healTargets && healTargets.length > 0) {
+
+            const wounded = healTargets
+                .map(id => Game.getObjectById(id))
+                .find(creep =>
+                    creep &&
+                    creep.hits < creep.hitsMax &&
+                    tower.pos.getRangeTo(creep) <= 20
+                );
+
+            if (wounded) {
+                tower.heal(wounded);
+                continue;
+            }
+        }
+
+        // Ищем повреждённые здания, включая контейнеры
+        let repairTarget = tower.room.find(FIND_STRUCTURES, {
+            filter: structure =>
+                structure.structureType !== STRUCTURE_WALL &&
+                structure.structureType !== STRUCTURE_RAMPART &&
+                structure.hits < structure.hitsMax
+        })[0];
+
+        // Если повреждённых зданий нет — ищем стены и Ramparts
+        if (!repairTarget) {
+            repairTarget = tower.room.find(FIND_STRUCTURES, {
+                filter: structure =>
+                    (
+                        structure.structureType === STRUCTURE_WALL ||
+                        structure.structureType === STRUCTURE_RAMPART
+                    ) &&
+                    structure.hits < TOWER_REPAIR_TARGET_HITS
+            })[0];
+        }
+
+        // Ремонтируем найденную цель
+        if (repairTarget) {
+            tower.repair(repairTarget);
+        }
     }
 }
 
