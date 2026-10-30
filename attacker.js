@@ -1484,7 +1484,13 @@ module.exports = {
         if (this.previewOnly || creep.spawning || !this.targetRoom) {
             return;
         }
-
+console.log(
+    "[ATTACKER DEBUG] " + creep.name +
+    " | phase=" + creep.memory.attackerPositions?.phase +
+    " | waitingForNewKeeper=" +
+    creep.memory.attackerPositions?.waitingForNewKeeper +
+    " | hits=" + creep.hits + "/" + creep.hitsMax
+);
         const threatTimer =
             updateHostileSquadRetreatTimer(this.targetRoom);
 
@@ -1808,14 +1814,7 @@ module.exports = {
             points.keeper = getPositionData(keeper.pos);
             points.keeperId = keeper.id;
 
-            console.log(
-                "[attacker " + creep.name +
-                "] DEBUG BASE: phase=" + points.phase +
-                ", waitingForNewKeeper=" + points.waitingForNewKeeper +
-                ", hits=" + creep.hits + "/" + creep.hitsMax +
-                ", на базе=" + creep.pos.isEqualTo(basePos)
-            );
-
+            
             // Если ждали нового Keeper, разрешаем выход с базы.
             if (points.waitingForNewKeeper) {
                 delete points.waitingForNewKeeper;
