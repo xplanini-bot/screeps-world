@@ -203,7 +203,6 @@ function harvestEnergy(creep) {
 }
 
 // Передача энергии или строительство
-
 function deliverEnergy(creep, spawn, containers, site) {
     // 1. Сначала заполняем Spawn
     if (spawn.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
@@ -560,7 +559,6 @@ function runScout(creep) {
 }
 
 
-
 // Общая логика резервирования энергии
 
 // Сколько энергии уже зарезервировано другими юнитами
@@ -576,7 +574,6 @@ function getReservedEnergy(containerId, creepName) {
             0
         );
 }
-
 
 // Поиск контейнера или Storage с учётом резервов
 function findEnergyContainer(
@@ -652,14 +649,6 @@ function findEnergyContainer(
     return null;
 }
 
-// Проверить, назначен ли приёмник другому перевозчику
-function isDeliveryTargetAssigned(targetId, creepName) {
-    return Object.values(Game.creeps).some(other =>
-        other.name !== creepName &&
-        other.memory.deliveryTargetId === targetId
-    );
-}
-
 // Зарезервировать энергию в выбранном контейнере
 function reserveEnergy(creep, container, amount) {
     creep.memory.energyReservationTargetId = container.id;
@@ -671,7 +660,6 @@ function releaseEnergyReservation(creep) {
     delete creep.memory.energyReservationTargetId;
     delete creep.memory.energyReservationAmount;
 }
-
 
 // Установка контейнеров у источников
 function manageContainerConstruction(room) {
@@ -1069,7 +1057,6 @@ function isReservedExtensionTile(x, y, spawn) {
     return false;
 }
 
-
 // Автоматический выбор места для Storage
 function manageStorageConstruction(room, spawn) {
 
@@ -1441,6 +1428,8 @@ function manageExtensionConstruction(room, spawn) {
 
 
                 if (distance !== radius) continue;
+                // Оставляем свободным кольцо вокруг Spawn на расстоянии 5 клеток
+                if (distance === 5) continue;
 
                 // Не занимаем зарезервированные проходы
                 if (isReservedExtensionTile(x, y, spawn)) continue;
@@ -1507,8 +1496,6 @@ function manageExtensionConstruction(room, spawn) {
         "[EXTENSION] Не найдено подходящего места в радиусе 2–20"
     );
 }
-
-
 
 // Анализ шахт в комнате
 function analyzeMines(room) {
@@ -1595,8 +1582,6 @@ function analyzeMines(room) {
     return mines;
 }
 
-
-
 // Расчёт потребности шахт в юнитах
 function calculateMineNeeds(room) {
     const mines = analyzeMines(room);
@@ -1628,8 +1613,6 @@ function calculateMineNeeds(room) {
     });
 }
 
-
-
 // Расчёт потребности шахт во всех разрешённых комнатах
 function calculateAllMineNeeds(homeRoom) {
     const roomNames = [
@@ -1653,9 +1636,7 @@ function calculateAllMineNeeds(homeRoom) {
     return allMines;
 }
 
-
 // Назначение обычных добытчиков шахтам
-
 function assignHarvestersToMines(homeRoom) {
     const mines = calculateAllMineNeeds(homeRoom);
 
