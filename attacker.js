@@ -1808,6 +1808,14 @@ module.exports = {
             points.keeper = getPositionData(keeper.pos);
             points.keeperId = keeper.id;
 
+            console.log(
+                "[attacker " + creep.name +
+                "] DEBUG BASE: phase=" + points.phase +
+                ", waitingForNewKeeper=" + points.waitingForNewKeeper +
+                ", hits=" + creep.hits + "/" + creep.hitsMax +
+                ", на базе=" + creep.pos.isEqualTo(basePos)
+            );
+
             // Если ждали нового Keeper, разрешаем выход с базы.
             if (points.waitingForNewKeeper) {
                 delete points.waitingForNewKeeper;
@@ -1824,7 +1832,7 @@ module.exports = {
                     "новый Keeper стабилизировался"
                 );
             }
-            
+
             delete points.keeperTracking;
             delete points.lastKeeperTrackingLog;
             delete points.waitingForKeeperLogged;
