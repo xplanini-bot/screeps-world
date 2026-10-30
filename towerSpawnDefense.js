@@ -296,6 +296,18 @@ function runTowerDefense(room) {
                 }
 
                 // Сначала ищем повреждённые здания, кроме стен и Ramparts
+                console.log(
+                    "Повреждённые здания:",
+                    tower.room.find(FIND_MY_STRUCTURES, {
+                        filter: structure =>
+                            structure.hits < structure.hitsMax
+                    }).map(s => ({
+                        type: s.structureType,
+                        hits: s.hits,
+                        max: s.hitsMax
+                    }))
+                );
+
                 let repairTarget = tower.room.find(FIND_MY_STRUCTURES, {
                     filter: structure =>
                         structure.structureType !== STRUCTURE_WALL &&
