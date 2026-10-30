@@ -2398,6 +2398,7 @@ module.exports = {
                         );
                     } else {
                         delete points.keeperId;
+                        delete points.keeper;
                         points.waitingForNewKeeper = true;
 
                         changePhase(
