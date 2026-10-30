@@ -1778,7 +1778,7 @@ module.exports = {
         // 4. Ждём Keeper именно выбранного логова.
         // Его первое появление у логова ещё не означает,
         // что он добрался до шахты.
-        if (!points.keeper) {
+       if (!points.keeper || points.waitingForNewKeeper) {
             const expectedKeeperName = "Keeper" + points.lairId;
 
             const keepers = creep.room.find(FIND_HOSTILE_CREEPS, {
