@@ -449,39 +449,6 @@ function monitorContainerIdleTime(homeRoom) {
     }
 }
 
-// удаление расширителей находящихся рядом со сторадж
-function removeExtensionsNearStorage(room) {
-    const storages = room.find(FIND_MY_STRUCTURES, {
-        filter: structure =>
-            structure.structureType === STRUCTURE_STORAGE
-    });
-
-    // Если Storage ещё нет, ничего не делаем
-    if (storages.length === 0) return;
-
-    const extensions = room.find(FIND_MY_STRUCTURES, {
-        filter: structure =>
-            structure.structureType === STRUCTURE_EXTENSION
-    });
-
-    for (const extension of extensions) {
-        const nearStorage = storages.some(storage =>
-            extension.pos.getRangeTo(storage) <= 1
-        );
-
-        if (!nearStorage) continue;
-
-        const result = extension.destroy();
-
-        if (result === OK) {
-            console.log(
-                `[STORAGE] Удалён расширитель (${extension.pos.x}, ${extension.pos.y})` +
-                ` | Причина: находится рядом со Storage`
-            );
-        }
-    }
-}
-
 /**
  * Определяет, до каких сторон комнаты сохраняется путь от Spawn.
  * blockedX и blockedY — клетка, которую проверяем
@@ -578,8 +545,8 @@ function isReservedExtensionTile(x, y, spawn) {
 // Автоматический выбор места для Storage
 function manageStorageConstruction(room, spawn) {
 
-    // Storage доступен с RCL 4
-    if (!room.controller || room.controller.level < 4) {
+    // Начинаем планировать Storage с RCL 2
+    if (!room.controller || room.controller.level < 1) {
         return;
     }
 
@@ -608,6 +575,12 @@ function manageStorageConstruction(room, spawn) {
     // Проверяем, есть ли сохранённая позиция
     const plannedPosition =
         Memory.storageConstructionPlans[room.name];
+
+    // Если позиция уже рассчитана, но RCL ещё ниже 4,
+    // пока ничего не строим
+    if (plannedPosition && room.controller.level < 4) {
+        return;
+    }
 
     if (plannedPosition) {
         const { x, y } = plannedPosition;
@@ -844,6 +817,11 @@ function manageStorageConstruction(room, spawn) {
     // Запоминаем выбранную клетку
     Memory.storageConstructionPlans[room.name] = bestPosition;
 
+    // До RCL 4 только сохраняем план
+    if (room.controller.level < 4) {
+        return;
+    }
+
     // Сначала строим рампарт
     const result = room.createConstructionSite(
         bestPosition.x,
@@ -873,6 +851,10 @@ function manageExtensionConstruction(room, spawn) {
     if (!room.controller || room.controller.level < 2) {
         return;
     }
+
+    // Запланированная позиция будущего Storage
+    const storagePlan =
+        Memory.storageConstructionPlans?.[room.name];
 
     // Максимально разрешённое количество расширителей
     const maxExtensions =
@@ -946,6 +928,15 @@ function manageExtensionConstruction(room, spawn) {
 
 
                 if (distance !== radius) continue;
+                // Не занимаем место, зарезервированное под Storage
+                if (
+                    storagePlan &&
+                    x === storagePlan.x &&
+                    y === storagePlan.y
+                ) {
+                    continue;
+                }
+
                 // Оставляем свободным кольцо вокруг Spawn на расстоянии 5 клеток
                 if (distance === 5) continue;
 
@@ -1019,7 +1010,6 @@ function manageExtensionConstruction(room, spawn) {
 module.exports = {
     manageContainerConstruction,
     monitorContainerIdleTime,
-    removeExtensionsNearStorage,
     manageStorageConstruction,
     manageExtensionConstruction,
     manageControllerContainerConstruction,

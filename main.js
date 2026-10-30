@@ -980,8 +980,6 @@ module.exports.loop = function () {
 
     // Сначала выбираем место для Storage
     construction.manageStorageConstruction(homeRoom, spawn);
-    // удаление расширителей находящихся рядом со сторадж
-    construction.removeExtensionsNearStorage(homeRoom);
     //проверяем нужно ли строить расширители
     construction.manageExtensionConstruction(homeRoom, spawn);
 
