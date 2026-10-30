@@ -1827,9 +1827,12 @@ module.exports.loop = function () {
     //установка контейнера в домашней зоне рядом с шахтой
     manageContainerConstruction(homeRoom);
     //Установка контейнера в дальней комнате рядом с шахтой
-    const remoteRoom = Game.rooms[REMOTE_ROOM];
-    if (remoteRoom) {
-        manageContainerConstruction(remoteRoom);
+    for (const roomName of roomConfig.REMOTE_ROOMS) {
+        const remoteRoom = Game.rooms[roomName];
+
+        if (remoteRoom) {
+            manageContainerConstruction(remoteRoom);
+        }
     }
 
     // Сначала выбираем место для Storage
