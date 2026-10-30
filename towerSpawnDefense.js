@@ -320,14 +320,19 @@ function runTowerDefense(room) {
 
         // Если повреждённых зданий нет — ищем стены и Ramparts
         if (!repairTarget) {
-            repairTarget = tower.room.find(FIND_STRUCTURES, {
+            const wallTargets = tower.room.find(FIND_STRUCTURES, {
                 filter: structure =>
                     (
                         structure.structureType === STRUCTURE_WALL ||
                         structure.structureType === STRUCTURE_RAMPART
                     ) &&
                     structure.hits < TOWER_REPAIR_TARGET_HITS
-            })[0];
+            });
+
+            // Сначала ремонтируем стены с наименьшим количеством HP
+            wallTargets.sort((a, b) => a.hits - b.hits);
+
+            repairTarget = wallTargets[0];
         }
 
         // Ремонтируем найденную цель
