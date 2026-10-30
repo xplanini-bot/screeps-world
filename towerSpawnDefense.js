@@ -245,7 +245,28 @@ function runTowerDefense(room) {
 
     // Управляем каждой башней
     for (let i = 0; i < activeTowers.length; i++) {
+        // Список повреждённых обычных сооружений
+        const repairMemoryKey = "towerRepairTargets_" + room.name;
 
+        let repairTargets = Memory[repairMemoryKey];
+
+        // Проверяем здания раз в 50 тиков
+        if (!repairTargets || Game.time - repairTargets.lastScan >= 50) {
+
+            const structures = room.find(FIND_STRUCTURES, {
+                filter: structure =>
+                    structure.structureType !== STRUCTURE_WALL &&
+                    structure.structureType !== STRUCTURE_RAMPART &&
+                    structure.hits < structure.hitsMax
+            });
+
+            repairTargets = {
+                lastScan: Game.time,
+                ids: structures.map(structure => structure.id)
+            };
+
+            Memory[repairMemoryKey] = repairTargets;
+        }
         const tower = activeTowers[i];
         const memoryKey = "towerTarget_" + tower.id;
 
@@ -310,14 +331,17 @@ function runTowerDefense(room) {
             }
         }
 
-        // Ищем повреждённые здания, включая контейнеры
-        let repairTarget = tower.room.find(FIND_STRUCTURES, {
-            filter: structure =>
-                structure.structureType !== STRUCTURE_WALL &&
-                structure.structureType !== STRUCTURE_RAMPART &&
-                structure.hits < structure.hitsMax
-        })[0];
+        // Ищем повреждённые здания из сохранённого списка
+        repairTargets.ids = repairTargets.ids.filter(id => {
+            const structure = Game.getObjectById(id);
 
+            return structure && structure.hits < structure.hitsMax;
+        });
+
+        let repairTarget = repairTargets.ids.length > 0
+            ? Game.getObjectById(repairTargets.ids[0])
+            : null;
+            
         // Если повреждённых зданий нет — ищем стены и Ramparts
         if (!repairTarget) {
             const wallTargets = tower.room.find(FIND_STRUCTURES, {
