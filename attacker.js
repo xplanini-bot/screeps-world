@@ -1769,6 +1769,12 @@ module.exports = {
             return;
         }
 
+        console.log(
+            "[ATTACKER CHECK] " + creep.name +
+            " | keeper=" + (points.keeper ? "есть" : "нет") +
+            " | waitingForNewKeeper=" + !!points.waitingForNewKeeper
+        );
+
         // 4. Ждём Keeper именно выбранного логова.
         // Его первое появление у логова ещё не означает,
         // что он добрался до шахты.
