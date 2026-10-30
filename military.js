@@ -1,3 +1,4 @@
+const towerDelivery = require("towerDelivery");
 
 module.exports = {
 
@@ -128,14 +129,14 @@ module.exports = {
         }
 
 
-        // Проверяем наличие башни в домашней комнате
-        const towers = spawn.room.find(FIND_MY_STRUCTURES, {
-            filter: structure =>
-                structure.structureType === STRUCTURE_TOWER
-        });
+        // Проверяем башню, указанную в towerDelivery
+        const tower = towerDelivery.TOWER_ID
+            ? Game.getObjectById(towerDelivery.TOWER_ID)
+            : null;
 
-        // Без башни защитники этой тактики не нужны
-        if (towers.length === 0) return;
+        // Без указанной башни обычные защитники не создаются
+        if (!tower || tower.room.name !== spawn.room.name) return;
+
 
         // Если спавн занят
         if (spawn.spawning) return;
