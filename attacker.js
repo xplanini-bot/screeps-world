@@ -1808,6 +1808,23 @@ module.exports = {
             points.keeper = getPositionData(keeper.pos);
             points.keeperId = keeper.id;
 
+            // Если ждали нового Keeper, разрешаем выход с базы.
+            if (points.waitingForNewKeeper) {
+                delete points.waitingForNewKeeper;
+
+                // Сбрасываем старые боевые позиции.
+                delete points.direction;
+                delete points.fire;
+                delete points.base;
+                delete points.healerPositions;
+                delete points.report;
+
+                changePhase(
+                    "fire",
+                    "новый Keeper стабилизировался"
+                );
+            }
+            
             delete points.keeperTracking;
             delete points.lastKeeperTrackingLog;
             delete points.waitingForKeeperLogged;
@@ -2273,24 +2290,31 @@ module.exports = {
             // БАЗА 1
             // --------------------------------------------------
             case "base": {
+
                 // Должны занять единственную базу.
                 if (!creep.pos.isEqualTo(basePos)) {
                     creep.moveTo(basePos, { reusePath: 20 });
                     return;
                 }
 
-                // Возвращаемся к Keeper только с полным здоровьем.
-                if (creep.hits === creep.hitsMax) {
-                    changePhase(
-                        "fire",
-                        "здоровье полностью восстановлено"
-                    );
-
-                    creep.moveTo(firePos, { reusePath: 20 });
+                // Ждём полного восстановления здоровья.
+                if (creep.hits < creep.hitsMax) {
                     return;
                 }
 
-                // Остаёмся на базе, пока хиллеры восстанавливают здоровье.
+                // Если вернулись после гибели Keeper,
+                // остаёмся на базе до появления нового.
+                if (points.waitingForNewKeeper) {
+                    return;
+                }
+
+                // Обычный первоначальный выход на огневую позицию.
+                changePhase(
+                    "fire",
+                    "здоровье полностью восстановлено"
+                );
+
+                creep.moveTo(firePos, { reusePath: 20 });
                 return;
             }
 
@@ -2370,6 +2394,7 @@ module.exports = {
                         );
                     } else {
                         delete points.keeperId;
+                        points.waitingForNewKeeper = true;
 
                         changePhase(
                             "base",
