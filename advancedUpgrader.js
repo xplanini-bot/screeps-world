@@ -80,19 +80,18 @@ const advancedUpgrader = {
         const container = this.findControllerContainer(room);
         if (!container) return;
 
-        // Сначала апгрейдер должен добраться до контейнера
-        if (!creep.memory.containerPostReached) {
-            if (creep.pos.getRangeTo(container) > 1) {
-                creep.moveTo(container, {
-                    range: 1,
-                    reusePath: 20
-                });
-                return;
-            }
-
-            // Апгрейдер уже стоит рядом с контейнером
-            creep.memory.containerPostReached = true;
+        // Апгрейдер должен находиться непосредственно на контейнере
+        if (!creep.pos.isEqualTo(container.pos)) {
+            creep.moveTo(container, {
+                range: 0,
+                reusePath: 20,
+                costCallback: construction.avoidConstructionSites
+            });
+            return;
         }
+
+
+
 
         const energy = creep.store[RESOURCE_ENERGY];
 
@@ -102,7 +101,8 @@ const advancedUpgrader = {
 
             if (result === ERR_NOT_IN_RANGE) {
                 creep.moveTo(controller, {
-                    reusePath: 20
+                    reusePath: 20,
+                    costCallback: construction.avoidConstructionSites
                 });
             }
 
@@ -112,14 +112,7 @@ const advancedUpgrader = {
         // Если энергии нет — ждём её в контейнере
         if (container.store[RESOURCE_ENERGY] === 0) return;
 
-        const result = creep.withdraw(container, RESOURCE_ENERGY);
-
-        if (result === ERR_NOT_IN_RANGE) {
-            creep.moveTo(container, {
-                range: 1,
-                reusePath: 20
-            });
-        }
+        creep.withdraw(container, RESOURCE_ENERGY);
     }
 
 };

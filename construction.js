@@ -55,7 +55,8 @@ function moveOffConstructionSite(creep) {
 
         creep.moveTo(positions[0], {
             range: 0,
-            reusePath: 10
+            reusePath: 10,
+            costCallback: construction.avoidConstructionSites
         });
     }
 
@@ -160,7 +161,24 @@ function manageControllerContainerConstruction(room) {
     }
 }
 
+// Запрет прохода через клетки со строительными площадками
+function avoidConstructionSites(roomName, costMatrix) {
+    const room = Game.rooms[roomName];
+
+    // Если комната не видна, оставляем маршрут без изменений
+    if (!room) return costMatrix;
+
+    const sites = room.find(FIND_CONSTRUCTION_SITES);
+
+    for (const site of sites) {
+        costMatrix.set(site.pos.x, site.pos.y, 255);
+    }
+
+    return costMatrix;
+}
+
 module.exports = {
     manageControllerContainerConstruction,
-    moveOffConstructionSite
+    moveOffConstructionSite,
+    avoidConstructionSites
 };
