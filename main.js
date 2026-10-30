@@ -17,6 +17,8 @@ const towerDelivery = require("towerDelivery");
 const carrier = require("carrier");
 const berserkMiner = require("berserkMiner");
 
+const towerSpawnDefense = require("towerSpawnDefense");
+
 const CREEP_BODY = [WORK, CARRY, MOVE];
 
 // Тело разведчика
@@ -937,6 +939,8 @@ module.exports.loop = function () {
 
     // УПРАВЛЕНИЕ БАШНЕЙ в отдельном модуле
     towerDelivery.manageTower();
+    
+    towerSpawnDefense.runTowerDefense(homeRoom);
 
     const minerReplacementWaiting = manageSpawning(spawn);
 
