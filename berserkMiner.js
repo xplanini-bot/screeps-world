@@ -646,10 +646,18 @@ module.exports = {
                 );
 
                 if (exit) {
+                    const path = creep.pos.findPathTo(exit, {
+                        ignoreCreeps: true
+                    });
+
+                    // Останавливаемся за две клетки до выхода.
+                    const stopIndex = Math.max(0, path.length - 3);
+                    const stopPosition = path[stopIndex] || creep.pos;
+
                     retreatPosition = {
-                        x: exit.x,
-                        y: exit.y,
-                        roomName: exit.roomName
+                        x: stopPosition.x,
+                        y: stopPosition.y,
+                        roomName: stopPosition.roomName
                     };
 
                     creep.memory.retreatPosition = retreatPosition;
