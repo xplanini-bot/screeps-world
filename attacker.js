@@ -1484,13 +1484,7 @@ module.exports = {
         if (this.previewOnly || creep.spawning || !this.targetRoom) {
             return;
         }
-console.log(
-    "[ATTACKER DEBUG] " + creep.name +
-    " | phase=" + creep.memory.attackerPositions?.phase +
-    " | waitingForNewKeeper=" +
-    creep.memory.attackerPositions?.waitingForNewKeeper +
-    " | hits=" + creep.hits + "/" + creep.hitsMax
-);
+
         const threatTimer =
             updateHostileSquadRetreatTimer(this.targetRoom);
 
@@ -1814,21 +1808,24 @@ console.log(
             points.keeper = getPositionData(keeper.pos);
             points.keeperId = keeper.id;
 
-            
-            // Если ждали нового Keeper, разрешаем выход с базы.
+            // Новый Keeper стабилизировался — разрешаем выход с базы.
             if (points.waitingForNewKeeper) {
                 delete points.waitingForNewKeeper;
 
-                // Сбрасываем старые боевые позиции.
+                // Старые боевые позиции больше не актуальны.
                 delete points.direction;
                 delete points.fire;
                 delete points.base;
-                delete points.healerPositions;
-                delete points.report;
+                delete points.healerSpots;
+                delete points.healerRoutePlanVersion;
+                delete points.healerFireSpots;
+                delete points.healerFireRoutePlanVersion;
+                delete points.healerFireThreatPosition;
+                delete points.reportedPlan;
 
-                changePhase(
-                    "fire",
-                    "новый Keeper стабилизировался"
+                console.log(
+                    "[attacker " + creep.name +
+                    "] Новый Keeper стабилизировался. Возвращаюсь к расчёту боевых позиций."
                 );
             }
 
