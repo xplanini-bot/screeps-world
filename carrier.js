@@ -342,15 +342,16 @@ function runCarrier(creep, spawn, homeRoom, helpers) {
         helpers.releaseEnergyReservation(creep);
     };
 
-    // Полный перевозчик переключается на доставку
-    if (freeCapacity === 0) {
+    // Если энергии достаточно — переключаемся на доставку
+    if (creep.store[RESOURCE_ENERGY] >= capacity / 2) {
         creep.memory.working = true;
     }
 
+    // Если энергии нет — переключаемся на поиск
     if (creep.store[RESOURCE_ENERGY] === 0) {
         creep.memory.working = false;
     }
-
+    
     // Если перевозчик уже закреплён за строителем,
     // сначала продолжаем специальную доставку
     if (creep.memory.builderDeliveryTarget) {

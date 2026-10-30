@@ -186,7 +186,6 @@ function updateWorkingState(creep) {
     }
 }
 
-
 // Добыча энергии из назначенной шахты
 function harvestEnergy(creep) {
     const source = creep.memory.mineId
@@ -242,7 +241,6 @@ function deliverEnergy(creep, spawn, containers, site) {
         if (result === ERR_NOT_IN_RANGE) creep.moveTo(site);
     }
 }
-
 
 // Обычный добытчик
 // Обычный добытчик
