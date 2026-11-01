@@ -510,72 +510,50 @@ module.exports = {
             ? Game.getObjectById(creep.memory.keeperLairId)
             : null;
 
-        // Если логово ещё не выбрано, читаем выбор стрелка.
+        // Если логово ещё не выбрано, читаем его из памяти стрелка.
         if (!lair || lair.structureType !== STRUCTURE_KEEPER_LAIR) {
-            const attacker = Object.values(Game.creeps).find(other => {
-                if (
-                    other.spawning ||
-                    other.memory.role !== "attacker" ||
-                    other.room.name !== targetRoom
-                ) {
-                    return false;
-                }
 
-                const positions = other.memory.attackerPositions;
+            const attacker = Object.values(Game.creeps).find(other =>
+                !other.spawning &&
+                other.memory.role === "attacker" &&
+                other.room.name === targetRoom &&
+                other.memory.keeperLairId
+            );
 
-                return (
-                    positions &&
-                    positions.roomName === targetRoom &&
-                    positions.lair &&
-                    positions.lair.roomName === targetRoom
-                );
-            });
-
-            // Ждём, пока стрелок выберет шахту.
+            // Ждём, пока стрелок выберет логово.
             if (!attacker) {
                 if (Game.time % 25 === 0) {
                     console.log(
-                        "[БЕШЕНЫЙ ШАХТЁР] Ожидаю выбора шахты " +
-                        "боевым отрядом в " + targetRoom
+                        "[БЕШЕНЫЙ ШАХТЁР] Ожидаю выбора логова стрелком в " +
+                        targetRoom
                     );
                 }
 
                 return;
             }
 
-            const lairPosition =
-                attacker.memory.attackerPositions.lair;
+            lair = Game.getObjectById(attacker.memory.keeperLairId);
 
-            const structures = creep.room.lookForAt(
-                LOOK_STRUCTURES,
-                lairPosition.x,
-                lairPosition.y
-            );
-
-            lair = structures.find(structure =>
-                structure.structureType === STRUCTURE_KEEPER_LAIR
-            );
-
-            if (!lair) {
+            if (!lair || lair.structureType !== STRUCTURE_KEEPER_LAIR) {
                 if (Game.time % 25 === 0) {
                     console.log(
-                        "[БЕШЕНЫЙ ШАХТЁР] Не найдено логово по координатам " +
-                        lairPosition.x + "," + lairPosition.y
+                        "[БЕШЕНЫЙ ШАХТЁР] Не найдено логово стрелка: " +
+                        attacker.memory.keeperLairId
                     );
                 }
 
                 return;
             }
 
-            // Запоминаем выбранное боевым отрядом логово.
+            // Запоминаем выбранное стрелком логово.
             creep.memory.keeperLairId = lair.id;
             creep.memory.sourceId = null;
             creep.memory.minePosition = null;
 
             console.log(
-                "[БЕШЕНЫЙ ШАХТЁР] Выбрана шахта боевого отряда. " +
-                "Логово: " + lair.id +
-                ", координаты: " + lair.pos.x + "," + lair.pos.y
+                "[БЕШЕНЫЙ ШАХТЁР] Выбрано логово стрелка: " +
+                lair.id + ", координаты: " +
+                lair.pos.x + "," + lair.pos.y
             );
         }
 

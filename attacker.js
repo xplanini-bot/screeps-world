@@ -300,6 +300,17 @@ module.exports = {
                     score -= 2;
                 }
 
+                // Штраф за клетку, на которой хиллер ранее получил урон.
+                const damagedPosition = healer.memory.damagedPosition;
+
+                if (
+                    damagedPosition &&
+                    damagedPosition.x === x &&
+                    damagedPosition.y === y
+                ) {
+                    score -= 1;
+                }
+
                 candidates.push({
                     x: x,
                     y: y,
@@ -789,6 +800,24 @@ module.exports = {
 
     runAttackerHealer(creep) {
         if (creep.spawning) return;
+        // Отслеживаем получение урона.
+        if (creep.memory.lastHits !== undefined) {
+            if (creep.hits < creep.memory.lastHits) {
+                creep.memory.damagedPosition = {
+                    x: creep.pos.x,
+                    y: creep.pos.y
+                };
+
+                console.log(
+                    "[ATTACKER HEALER] " + creep.name +
+                    " получил урон на клетке " +
+                    creep.pos.x + "," + creep.pos.y
+                );
+            }
+        }
+
+        // Сохраняем здоровье для следующей проверки.
+        creep.memory.lastHits = creep.hits;
         if (!this.targetRoom) return;
 
         // 1. Находим атакера.
