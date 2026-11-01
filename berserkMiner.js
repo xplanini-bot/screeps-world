@@ -7,7 +7,7 @@ module.exports = {
     targetRoom: "E26N55",
 
     // Отступаем за 20 тиков до появления хранителя E26N55
-    retreatBeforeSpawnTicks: 10,
+    retreatBeforeSpawnTicks: 15,
 
     // Тело: 6 WORK + 6 MOVE
     body: [
