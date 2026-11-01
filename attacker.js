@@ -344,6 +344,99 @@ module.exports = {
         }
     },
 
+
+    runInvaderMode(creep) {
+        // Ищем Invader в комнате.
+        const invader = creep.room.find(FIND_HOSTILE_CREEPS, {
+            filter: hostile => hostile.owner.username === "Invader"
+        }).sort((a, b) =>
+            creep.pos.getRangeTo(a) - creep.pos.getRangeTo(b)
+        )[0];
+
+        // Если Invader обнаружен.
+        if (invader) {
+
+            if (!creep.memory.invaderMode) {
+                creep.memory.invaderMode = true;
+                creep.memory.invaderRetreated = false;
+
+                console.log(
+                    "[ATTACKER] Обнаружен Invader: " + invader.name
+                );
+            }
+
+            // Однократное отступление с огневой позиции.
+            if (!creep.memory.invaderRetreated) {
+                const firePosition = creep.memory.firePosition;
+
+                if (
+                    firePosition &&
+                    creep.pos.x === firePosition.x &&
+                    creep.pos.y === firePosition.y
+                ) {
+                    if (!creep.memory.invaderRetreatPosition) {
+                        const positions = this.calculateRetreatPosition(
+                            creep,
+                            invader
+                        );
+
+                        if (positions.length > 0) {
+                            creep.memory.invaderRetreatPosition = {
+                                x: positions[0].x,
+                                y: positions[0].y
+                            };
+                        }
+                    }
+
+                    const retreatPosition =
+                        creep.memory.invaderRetreatPosition;
+
+                    if (retreatPosition) {
+                        const targetPos = new RoomPosition(
+                            retreatPosition.x,
+                            retreatPosition.y,
+                            creep.room.name
+                        );
+
+                        if (!creep.pos.isEqualTo(targetPos)) {
+                            creep.move(
+                                creep.pos.getDirectionTo(targetPos)
+                            );
+                            return true;
+                        }
+                    }
+                }
+
+                creep.memory.invaderRetreated = true;
+
+                console.log(
+                    "[ATTACKER] Отступление завершено."
+                );
+            }
+
+            // Атакуем, если Invader находится в радиусе стрельбы.
+            if (creep.pos.getRangeTo(invader) <= 3) {
+                creep.rangedAttack(invader);
+            }
+
+            return true;
+        }
+
+        // Если Invader исчез, завершаем режим.
+        if (creep.memory.invaderMode) {
+            delete creep.memory.invaderMode;
+            delete creep.memory.invaderRetreated;
+            delete creep.memory.invaderRetreatPosition;
+
+            console.log(
+                "[ATTACKER] Invader исчез. Возвращаемся к Keeper."
+            );
+        }
+
+        return false;
+    },
+
+
     manageSpawning(spawn) {
         if (!spawn || spawn.spawning) return;
 
@@ -423,6 +516,9 @@ module.exports = {
 
             return;
         }
+
+        // Проверяем режим борьбы с Invader.
+        if (this.runInvaderMode(creep)) return;
 
         // 2. Поиск ближайшего Keeper Lair.
         if (!creep.memory.keeperLairId) {
