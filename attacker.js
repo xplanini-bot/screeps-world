@@ -554,9 +554,24 @@ module.exports = {
             return;
         }
 
-        // Включаем общий режим отступления при здоровье ниже 50%.
-        if (creep.hits < creep.hitsMax * 0.5) {
-            creep.memory.retreatMode = true;
+        // Проверяем здоровье всей группы.
+        const group = [
+            creep,
+            ...Object.values(Game.creeps).filter(c =>
+                c.memory.role === "attackerHealer" &&
+                !c.spawning
+            )
+        ];
+
+        // Включаем отступление, если кто-либо из группы потерял более 50% здоровья.
+        if (group.some(member => member.hits < member.hitsMax * 0.5)) {
+            if (!creep.memory.retreatMode) {
+                creep.memory.retreatMode = true;
+
+                console.log(
+                    "[ATTACKER] Участник группы получил критический урон. Начинаем отступление."
+                );
+            }
         }
 
         // Проверяем здоровье всей группы.
@@ -565,7 +580,8 @@ module.exports = {
             const group = [
                 creep,
                 ...Object.values(Game.creeps).filter(c =>
-                    c.memory.role === "attackerHealer"
+                    c.memory.role === "attackerHealer" &&
+                    !c.spawning
                 )
             ];
 
