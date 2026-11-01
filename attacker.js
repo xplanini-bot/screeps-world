@@ -764,8 +764,11 @@ module.exports = {
         creep.memory.keeperStillTicks =
             (creep.memory.keeperStillTicks || 0) + 1;
 
-        // Ждём 10 неподвижных тиков.
-        if (creep.memory.keeperStillTicks < 10) return;
+        // Ждём 10 неподвижных тиков, если Keeper дальше 3 клеток.
+        if (
+            creep.memory.keeperStillTicks < 10 &&
+            creep.pos.getRangeTo(keeper) > 3
+        ) return;
 
         // Отмечаем выполнение расчёта.
         creep.memory.positionsCalculated = true;
@@ -809,7 +812,7 @@ module.exports = {
                 };
                 // Сбрасываем прежнюю позицию для немедленного пересчёта.
                 delete creep.memory.healerPosition;
-                
+
                 console.log(
                     "[ATTACKER HEALER] " + creep.name +
                     " получил урон на клетке " +
