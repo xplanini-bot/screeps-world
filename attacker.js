@@ -807,7 +807,9 @@ module.exports = {
                     x: creep.pos.x,
                     y: creep.pos.y
                 };
-
+                // Сбрасываем прежнюю позицию для немедленного пересчёта.
+                delete creep.memory.healerPosition;
+                
                 console.log(
                     "[ATTACKER HEALER] " + creep.name +
                     " получил урон на клетке " +
