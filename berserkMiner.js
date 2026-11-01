@@ -45,6 +45,15 @@ module.exports = {
         if (!this.targetRoom || !spawn || spawn.spawning) {
             return;
         }
+
+        // Не создаём шахтёра и перевозчиков,
+        // пока действует блокировка после появления Invader.
+        if (
+            Memory.attackerSpawnBlockedUntil &&
+            Game.time < Memory.attackerSpawnBlockedUntil
+        ) {
+            return;
+        }
         const extensions = spawn.room.find(FIND_MY_STRUCTURES, {
             filter: structure =>
                 structure.structureType === STRUCTURE_EXTENSION
@@ -589,9 +598,16 @@ module.exports = {
         // Ищем именно хранителя, соответствующего этому логову
         const keeperName = "Keeper" + lair.id;
 
-        const keeperAlive = creep.room
-            .find(FIND_HOSTILE_CREEPS)
-            .some(hostile => hostile.name === keeperName);
+        // Проверяем Keeper и Invader.
+        const hostiles = creep.room.find(FIND_HOSTILE_CREEPS);
+
+        const keeperAlive = hostiles.some(
+            hostile => hostile.name === keeperName
+        );
+
+        const invaderAlive = hostiles.some(
+            hostile => hostile.owner.username === "Invader"
+        );
 
         const ticksToSpawn = lair.ticksToSpawn;
 
@@ -601,7 +617,7 @@ module.exports = {
 
         // Хранитель активен или скоро появится —
         // отступаем в сторону домашней комнаты
-        if (keeperAlive || spawnSoon) {
+        if (keeperAlive || invaderAlive || spawnSoon) {
             if (!creep.memory.retreating) {
                 creep.memory.retreatPosition = null;
                 creep.memory.retreating = true;
@@ -609,7 +625,11 @@ module.exports = {
                 console.log(
                     "[БЕШЕНЫЙ ШАХТЁР] Отступление. " +
                     "Хранитель: " +
-                    (keeperAlive ? "активен" : "скоро появится") +
+                    (invaderAlive
+                        ? "обнаружен Invader"
+                        : keeperAlive
+                            ? "Keeper активен"
+                            : "Keeper скоро появится") +
                     ", тиков до появления: " +
                     ticksToSpawn
                 );
