@@ -624,6 +624,8 @@ module.exports = {
 
                 if (!creep.pos.isEqualTo(targetPos)) {
                     creep.moveTo(targetPos, { reusePath: 20 });
+                } else {
+                    creep.rangedAttack(keeper);
                 }
             }
 
