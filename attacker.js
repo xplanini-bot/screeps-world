@@ -370,7 +370,13 @@ module.exports = {
             if (!creep.memory.invaderMode) {
                 creep.memory.invaderMode = true;
                 creep.memory.invaderRetreated = false;
-
+                // Запрещаем создавать боевой отряд на 1500 тиков.
+                if (
+                    !Memory.attackerSpawnBlockedUntil ||
+                    Memory.attackerSpawnBlockedUntil <= Game.time
+                ) {
+                    Memory.attackerSpawnBlockedUntil = Game.time + 1500;
+                }
                 console.log(
                     "[ATTACKER] Обнаружен Invader: " + invader.name
                 );
@@ -452,6 +458,14 @@ module.exports = {
         if (!spawn || spawn.spawning) return;
 
         if (!this.targetRoom) return;
+
+        // Не создаём атакера и хиллеров в течение 1500 тиков после Invader.
+        if (
+            Memory.attackerSpawnBlockedUntil &&
+            Game.time < Memory.attackerSpawnBlockedUntil
+        ) {
+            return;
+        }
 
         const attackers = Object.values(Game.creeps).filter(
             creep => creep.memory.role === this.role
