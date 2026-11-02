@@ -12,6 +12,29 @@ const advancedUpgrader = {
         MOVE, MOVE
     ],
 
+    // Тяжёлое тело: 16 WORK / 1 CARRY / 3 MOVE = 1800
+    maxBody: [
+        WORK, WORK, WORK, WORK, WORK,
+        WORK, WORK, WORK, WORK, WORK,
+        WORK, WORK, WORK, WORK, WORK,
+        WORK, WORK,
+        CARRY,
+        MOVE, MOVE, MOVE
+    ],
+
+    getBody(room) {
+        const extensions = room.find(FIND_MY_STRUCTURES, {
+            filter: structure =>
+                structure.structureType === STRUCTURE_EXTENSION
+        });
+
+        if (extensions.length >= 30) {
+            return this.maxBody;
+        }
+
+        return this.body;
+    },
+
     // Поиск контейнера рядом с контроллером
     findControllerContainer(room) {
         const controller = room.controller;
@@ -51,16 +74,17 @@ const advancedUpgrader = {
 
         if (creeps.length >= this.desiredCount) return;
 
-        const cost = this.body.reduce(
+        const body = this.getBody(room);
+        const cost = body.reduce(
             (total, part) => total + BODYPART_COST[part],
             0
         );
 
-        if (spawn.room.energyAvailable < cost) return;
+        if (room.energyAvailable < cost) return;
 
         const name = `AdvancedUpgrader-${Game.time}`;
 
-        spawn.spawnCreep(this.body, name, {
+        spawn.spawnCreep(body, name, {
             memory: {
                 role: this.role,
                 working: false
